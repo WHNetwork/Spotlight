@@ -298,6 +298,95 @@ class GameState(BaseModel):
         "心动值": 0,
         "对未来的幻想": 45,
     })
+
+    schedule_profile: Dict[str, Any] = Field(default_factory=lambda: {
+        "stage_mode": "trainee",
+        "current_profile": {
+            "训练": 62,
+            "学校生活": 16,
+            "公司考察": 10,
+            "公开曝光": 2,
+            "恢复休息": 10,
+        },
+        "last_action_type": "none",
+        "practice_quota_need": 0,
+        "workload_pressure": 0,
+        "recent_schedule_notes": [],
+    })
+
+    progression: Dict[str, Any] = Field(default_factory=lambda: {
+        "skill_xp": {
+            "dance": 0,
+            "vocal": 0,
+            "rap": 0,
+            "stage": 0,
+            "variety": 0,
+            "language": 0,
+            "image": 0,
+            "acting": 0,
+            "creative": 0,
+            "producer": 0,
+        },
+        "skill_total_xp": {
+            "dance": 0,
+            "vocal": 0,
+            "rap": 0,
+            "stage": 0,
+            "variety": 0,
+            "language": 0,
+            "image": 0,
+            "acting": 0,
+            "creative": 0,
+            "producer": 0,
+        },
+        "growth_log": [],
+        "last_growth_turn": {},
+    })
+
+    skill_proficiency: Dict[str, int] = Field(default_factory=lambda: {
+        "dance": 70,
+        "vocal": 70,
+        "rap": 65,
+        "stage": 68,
+        "variety": 60,
+        "language": 60,
+        "acting": 55,
+        "creative": 60,
+        "producer": 50,
+    })
+
+    skill_last_practiced: Dict[str, int] = Field(default_factory=lambda: {
+        "dance": 0,
+        "vocal": 0,
+        "rap": 0,
+        "stage": 0,
+        "variety": 0,
+        "language": 0,
+        "acting": 0,
+        "creative": 0,
+        "producer": 0,
+    })
+    skill_decay_log: List[Dict[str, Any]] = Field(default_factory=list)
+
+    debut: Dict[str, Any] = Field(default_factory=lambda: {
+        "status": "not_candidate",
+        "readiness": 0,
+        "probability": 0,
+        "window_turns_left": 0,
+        "last_evaluation_turn": -1,
+        "candidate_attempts": 0,
+        "last_result": "",
+        "history": [],
+    })
+
+    ending: Dict[str, Any] = Field(default_factory=lambda: {
+        "status": "ongoing",
+        "window": "closed",
+        "candidate_endings": [],
+        "last_evaluation_turn": -1,
+        "final_result": "",
+        "history": [],
+    })
     inner_secrets: List[Dict[str, Any]] = Field(default_factory=list)
     crush_threads: List[Dict[str, Any]] = Field(default_factory=list)
     emotional_outlets: List[str] = Field(default_factory=list)
@@ -359,6 +448,12 @@ class GameState(BaseModel):
             "comeback": self.comeback,
             "period": self.period,
             "inner_life": self.inner_life,
+            "schedule_profile": self.schedule_profile,
+            "progression": self.progression,
+            "skill_proficiency": self.skill_proficiency,
+            "skill_last_practiced": self.skill_last_practiced,
+            "debut": self.debut,
+            "ending": self.ending,
             "inner_secrets": self.inner_secrets[-10:],
             "crush_threads": self.crush_threads[-5:],
             "emotional_outlets": self.emotional_outlets,

@@ -23,6 +23,11 @@ from core.social_context import default_social_context, evaluate_social_context
 from core.school_family import default_school_context, default_family_context, evaluate_school_family
 from core.safety_boundary import default_safety_context, evaluate_safety_boundary
 from core.hierarchy_system import default_hierarchy_context, evaluate_hierarchy_system
+from core.schedule_system import ensure_schedule_state, evaluate_schedule_system
+from core.progression_system import ensure_progression_state, convert_growth_diff_to_progression
+from core.skill_decay_system import ensure_skill_decay_state, evaluate_skill_decay_system
+from core.debut_system import ensure_debut_state, evaluate_debut_system
+from core.ending_system import ensure_ending_state, evaluate_ending_system
 
 
 class TurnEngine:
@@ -61,6 +66,11 @@ class TurnEngine:
         state.inner_life = default_inner_life()
 
         ensure_default_relationships(state)
+        ensure_schedule_state(state)
+        ensure_progression_state(state)
+        ensure_skill_decay_state(state)
+        ensure_debut_state(state)
+        ensure_ending_state(state)
 
         for tag in state.profile_tags:
             flag = f"身份标签：{tag}"
@@ -107,10 +117,19 @@ class TurnEngine:
         time_events, time_diff, turn_duration_days = advance_time(working_state, route_info, action)
         advance_period(working_state, days=turn_duration_days)
 
+        schedule_events, schedule_diff = evaluate_schedule_system(working_state, action, route_info)
+
         base_diff = base_diff_for_action(action, working_state)
         base_diff = apply_talent_modifiers(working_state, action, base_diff)
         for key, value in ability_passive_diff(working_state, action).items():
             base_diff[key] = base_diff.get(key, 0) + value
+
+        base_diff, progression_events, progression_diff = convert_growth_diff_to_progression(
+            working_state, action, base_diff, source="python"
+        )
+        skill_decay_events, skill_decay_diff = evaluate_skill_decay_system(working_state, action)
+        debut_events, debut_diff = evaluate_debut_system(working_state, action)
+        ending_events, ending_diff = evaluate_ending_system(working_state, action)
 
         system_events, system_diff = evaluate_all_systems(working_state, action)
         period_events, period_diff = evaluate_period_system(working_state, action)
@@ -123,6 +142,11 @@ class TurnEngine:
 
         for extra_diff in [
             time_diff,
+            schedule_diff,
+            progression_diff,
+            skill_decay_diff,
+            debut_diff,
+            ending_diff,
             period_diff,
             inner_diff,
             relationship_diff,
@@ -137,6 +161,11 @@ class TurnEngine:
         system_events = (
             validation.system_events
             + time_events
+            + schedule_events
+            + progression_events
+            + skill_decay_events
+            + debut_events
+            + ending_events
             + system_events
             + period_events
             + inner_events
@@ -157,6 +186,12 @@ class TurnEngine:
         response = parse_turn_response(raw)
 
         suggested = sanitize_suggested_diff(working_state, response.suggested_diff, action)
+        suggested, suggested_progression_events, suggested_progression_diff = convert_growth_diff_to_progression(
+            working_state, action, suggested, source="model"
+        )
+        system_events.extend(suggested_progression_events)
+        for key, value in suggested_progression_diff.items():
+            system_diff[key] = system_diff.get(key, 0) + value
 
         merged_diff = dict(base_diff)
         for key, value in system_diff.items():
