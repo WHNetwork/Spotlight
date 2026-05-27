@@ -1,0 +1,8 @@
+flet
+pydantic
+python-dotenv
+httpx
+keyring
+loguru
+rich
+pyinstaller
