@@ -21,3 +21,8 @@
 ```bash
 python app.py
 ```
+
+
+## 兼容修复
+
+已将 Flet 0.85 下不兼容的 `ft.border.all(...)` 改为 `ft.Border.all(...)`，将 `ft.alignment.center` 改为 `ft.Alignment.CENTER`，入口改为 `ft.run(...)`。

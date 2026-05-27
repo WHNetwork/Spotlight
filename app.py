@@ -24,7 +24,7 @@ def asset(path: str) -> str:
 
 
 def icon_image(name: str, size: int = 24, opacity: float = 1.0) -> ft.Image:
-    return ft.Image(src=asset(f"icons/{name}.png"), width=size, height=size, fit=ft.ImageFit.CONTAIN, opacity=opacity)
+    return ft.Image(src=asset(f"icons/{name}.png"), width=size, height=size, fit="contain", opacity=opacity)
 
 def glass_color(opacity: float = 0.72) -> str:
     return ft.Colors.with_opacity(opacity, ft.Colors.WHITE)
@@ -37,6 +37,7 @@ class KpopApp:
         self.page.window_width = 1320
         self.page.window_height = 860
         self.page.theme_mode = ft.ThemeMode.LIGHT
+        self.page.theme = ft.Theme(font_family="Microsoft YaHei UI")
         self.config = AppConfig()
         self.storage = SaveStorage()
         self.save_id: Optional[int] = None
@@ -51,6 +52,7 @@ class KpopApp:
         self.show_home()
 
     def clear(self) -> None:
+        self.page.on_resize = None
         self.page.controls.clear()
 
     def show_home(self) -> None:
@@ -59,85 +61,115 @@ class KpopApp:
         self.page.bgcolor = ft.Colors.WHITE
         latest_id = self.storage.latest_save_id()
 
+        # Flet 不会自动把固定像素 UI 等比缩放，所以主页按当前窗口尺寸计算比例。
+        # 设计稿基准接近 1536×864；窗口变化时重建主页，避免按钮和背景错位。
+        vw = int(self.page.width or 1460)
+        vh = int(self.page.height or 820)
+        scale = min(vw / 1536, vh / 864)
+        scale = max(0.72, min(1.12, scale))
+
+        def r(value: float) -> int:
+            return max(1, int(value * scale))
+
         def top_icon(name: str, tooltip: str, handler):
             return ft.Container(
-                content=icon_image(name, 28),
-                width=54,
-                height=54,
-                bgcolor=glass_color(0.64),
-                border=ft.border.all(1, ft.Colors.with_opacity(0.55, ft.Colors.WHITE)),
-                border_radius=18,
-                alignment=ft.alignment.center,
+                content=icon_image(name, r(28)),
+                width=r(54),
+                height=r(54),
+                bgcolor=glass_color(0.66),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.58, ft.Colors.WHITE)),
+                border_radius=r(18),
+                alignment=ft.Alignment.CENTER,
                 tooltip=tooltip,
                 on_click=handler,
                 ink=True,
-                shadow=ft.BoxShadow(blur_radius=22, spread_radius=0, color=ft.Colors.with_opacity(0.12, ft.Colors.BLUE_GREY), offset=ft.Offset(0, 8)),
+                shadow=ft.BoxShadow(
+                    blur_radius=r(22),
+                    spread_radius=0,
+                    color=ft.Colors.with_opacity(0.12, ft.Colors.BLUE_GREY),
+                    offset=ft.Offset(0, r(8)),
+                ),
             )
 
+        button_w = max(r(360), min(r(430), int(vw * 0.42)))
+        button_h = r(76)
+
         def menu_button(title: str, subtitle: str, icon_name: str, english: str, handler, disabled: bool = False):
-            bg = ft.Colors.with_opacity(0.78 if not disabled else 0.42, ft.Colors.WHITE)
+            bg = ft.Colors.with_opacity(0.80 if not disabled else 0.46, ft.Colors.WHITE)
             fg = "#56617A" if not disabled else "#9AA0B5"
             return ft.Container(
-                width=430,
-                height=76,
-                padding=ft.padding.symmetric(horizontal=22, vertical=10),
-                border_radius=38,
+                width=button_w,
+                height=button_h,
+                padding=ft.Padding(left=r(22), right=r(22), top=r(10), bottom=r(10)),
+                border_radius=r(38),
                 bgcolor=bg,
-                border=ft.border.all(1, ft.Colors.with_opacity(0.82, "#FFFFFF")),
-                shadow=ft.BoxShadow(blur_radius=28, spread_radius=0, color=ft.Colors.with_opacity(0.12, "#536B89"), offset=ft.Offset(0, 10)),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.84, "#FFFFFF")),
+                shadow=ft.BoxShadow(
+                    blur_radius=r(28),
+                    spread_radius=0,
+                    color=ft.Colors.with_opacity(0.12, "#536B89"),
+                    offset=ft.Offset(0, r(10)),
+                ),
                 opacity=0.62 if disabled else 1,
                 on_click=None if disabled else handler,
                 ink=not disabled,
                 content=ft.Row([
-                    ft.Container(icon_image(icon_name, 36, 0.95 if not disabled else 0.4), width=48, height=48, border_radius=24, bgcolor=ft.Colors.with_opacity(0.52, "#F7ECEE"), alignment=ft.alignment.center),
+                    ft.Container(
+                        icon_image(icon_name, r(36), 0.95 if not disabled else 0.4),
+                        width=r(48),
+                        height=r(48),
+                        border_radius=r(24),
+                        bgcolor=ft.Colors.with_opacity(0.52, "#F7ECEE"),
+                        alignment=ft.Alignment.CENTER,
+                    ),
                     ft.Column([
-                        ft.Text(title, size=18, weight=ft.FontWeight.W_600, color=fg),
-                        ft.Text(subtitle, size=11, color=ft.Colors.with_opacity(0.70, fg)),
-                    ], spacing=2, expand=True),
-                    ft.Text(english, size=10, color=ft.Colors.with_opacity(0.48, fg), italic=True),
+                        ft.Text(title, size=r(18), weight=ft.FontWeight.W_600, color=fg),
+                        ft.Text(subtitle, size=r(11), color=ft.Colors.with_opacity(0.70, fg)),
+                    ], spacing=max(1, r(2)), expand=True),
+                    ft.Text(english, size=r(10), color=ft.Colors.with_opacity(0.48, fg), italic=True),
                 ], alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             )
 
         profile_card = ft.Container(
-            width=320,
-            height=126,
-            padding=18,
-            border_radius=24,
-            bgcolor=glass_color(0.60),
-            border=ft.border.all(1, ft.Colors.with_opacity(0.72, ft.Colors.WHITE)),
-            shadow=ft.BoxShadow(blur_radius=26, color=ft.Colors.with_opacity(0.10, "#536B89"), offset=ft.Offset(0, 10)),
+            width=r(320),
+            height=r(126),
+            padding=r(18),
+            border_radius=r(24),
+            bgcolor=glass_color(0.62),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.72, ft.Colors.WHITE)),
+            shadow=ft.BoxShadow(blur_radius=r(26), color=ft.Colors.with_opacity(0.10, "#536B89"), offset=ft.Offset(0, r(10))),
             content=ft.Row([
-                ft.Container(icon_image("app_logo", 72), width=78, height=78, border_radius=39, bgcolor=ft.Colors.with_opacity(0.55, "#F7ECEE"), alignment=ft.alignment.center),
+                ft.Container(icon_image("app_logo", r(72)), width=r(78), height=r(78), border_radius=r(39), bgcolor=ft.Colors.with_opacity(0.55, "#F7ECEE"), alignment=ft.Alignment.CENTER),
                 ft.Column([
-                    ft.Text("星光练习室", size=18, weight=ft.FontWeight.W_700, color="#56617A"),
-                    ft.Text("Starlight Practice Room", size=11, italic=True, color="#8C88A6"),
-                    ft.Container(height=6),
-                    ft.Text("最新存档可读取" if latest_id is not None else "尚未开始旅程", size=12, color="#7D8CA0"),
+                    ft.Text("星光练习室", size=r(18), weight=ft.FontWeight.W_700, color="#56617A"),
+                    ft.Text("Starlight Practice Room", size=r(11), italic=True, color="#8C88A6"),
+                    ft.Container(height=r(6)),
+                    ft.Text("最新存档可读取" if latest_id is not None else "尚未开始旅程", size=r(12), color="#7D8CA0"),
                 ], spacing=1),
-            ], spacing=12),
+            ], spacing=r(12)),
         )
 
         news_card = ft.Container(
-            width=410,
-            padding=22,
-            border_radius=24,
-            bgcolor=glass_color(0.56),
-            border=ft.border.all(1, ft.Colors.with_opacity(0.72, ft.Colors.WHITE)),
-            shadow=ft.BoxShadow(blur_radius=24, color=ft.Colors.with_opacity(0.10, "#536B89"), offset=ft.Offset(0, 10)),
+            width=r(410),
+            padding=r(22),
+            border_radius=r(24),
+            bgcolor=glass_color(0.58),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.72, ft.Colors.WHITE)),
+            shadow=ft.BoxShadow(blur_radius=r(24), color=ft.Colors.with_opacity(0.10, "#536B89"), offset=ft.Offset(0, r(10))),
             content=ft.Column([
-                ft.Row([icon_image("diary", 22), ft.Text("星光日报", size=16, weight=ft.FontWeight.W_700, color="#6A6684")], spacing=8),
-                ft.Text("今日行程更新", size=13, color="#7D8CA0"),
-                ft.Text("· 个人档案：开启角色创建", size=13, color="#7D8CA0"),
-                ft.Text("· 存档：支持 DeepSeek 正式回合", size=13, color="#7D8CA0"),
-                ft.Text("· UI：主页视觉重制中", size=13, color="#7D8CA0"),
-            ], spacing=6),
+                ft.Row([icon_image("diary", r(22)), ft.Text("星光日报", size=r(16), weight=ft.FontWeight.W_700, color="#6A6684")], spacing=r(8)),
+                ft.Text("今日行程更新", size=r(13), color="#7D8CA0"),
+                ft.Text("· 个人档案：开启角色创建", size=r(13), color="#7D8CA0"),
+                ft.Text("· 存档：支持 DeepSeek 正式回合", size=r(13), color="#7D8CA0"),
+                ft.Text("· UI：主页视觉重制中", size=r(13), color="#7D8CA0"),
+            ], spacing=r(6)),
         )
 
         title_block = ft.Column([
-            ft.Text("✦", size=36, color="#B7A6D8", text_align=ft.TextAlign.CENTER),
-            ft.Text("星光练习室", size=64, weight=ft.FontWeight.W_700, color="#8E88B8", text_align=ft.TextAlign.CENTER),
-            ft.Text("Starlight Practice Room", size=18, italic=True, color="#9A96B7", text_align=ft.TextAlign.CENTER),
-            ft.Text("少女偶像人生模拟器", size=16, color="#7D8CA0", text_align=ft.TextAlign.CENTER),
+            ft.Text("✦", size=r(36), color="#B7A6D8", text_align=ft.TextAlign.CENTER),
+            ft.Text("星光练习室", size=r(64), weight=ft.FontWeight.W_700, color="#8E88B8", text_align=ft.TextAlign.CENTER),
+            ft.Text("Starlight Practice Room", size=r(18), italic=True, color="#9A96B7", text_align=ft.TextAlign.CENTER),
+            ft.Text("KPOP 女团爱豆模拟器", size=r(16), color="#7D8CA0", text_align=ft.TextAlign.CENTER),
         ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
 
         menu = ft.Column([
@@ -145,45 +177,56 @@ class KpopApp:
             menu_button("新的人生", "创建角色，从第一天报到开始", "new_character", "NEW GAME", lambda e: self.show_character_create()),
             menu_button("读取存档", "查看所有保存的故事线", "save_archive", "LOAD GAME", lambda e: self.show_save_list()),
             menu_button("系统设置", "配置 DeepSeek 模型与 API", "settings", "SETTINGS", lambda e: self.show_settings()),
-        ], spacing=22, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+        ], spacing=r(22), horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+
+        # 小窗口时隐藏两侧装饰卡片，避免挤压主菜单。
+        show_side_cards = vw >= 980 and vh >= 680
+        show_quote = vw >= 1100 and vh >= 720
+        side_width = r(430) if show_side_cards else r(40)
 
         home = ft.Stack([
-            ft.Image(src=asset("backgrounds/home_bg.png"), fit=ft.ImageFit.COVER, expand=True),
-            ft.Container(expand=True, bgcolor=ft.Colors.with_opacity(0.16, ft.Colors.WHITE)),
+            ft.Image(src=asset("backgrounds/home_bg.png"), width=vw, height=vh, fit="cover"),
+            ft.Container(width=vw, height=vh, bgcolor=ft.Colors.with_opacity(0.05, ft.Colors.WHITE)),
             ft.Container(
-                expand=True,
-                padding=ft.padding.only(left=42, right=42, top=30, bottom=34),
+                width=vw,
+                height=vh,
+                padding=ft.Padding(left=r(42), right=r(42), top=r(30), bottom=r(34)),
                 content=ft.Column([
                     ft.Row([
-                        profile_card,
+                        profile_card if show_side_cards else ft.Container(width=1, height=1),
                         ft.Container(expand=True),
                         top_icon("contract", "合同/说明", lambda e: self.snack("主页 UI 阶段：合同页稍后设计。")),
                         top_icon("diary", "星光日记", lambda e: self.snack("主页 UI 阶段：日记页稍后设计。")),
                         top_icon("schedule", "行程", lambda e: self.snack("主页 UI 阶段：行程页稍后设计。")),
                         top_icon("settings", "设置", lambda e: self.show_settings()),
-                    ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
+                    ], spacing=r(14), vertical_alignment=ft.CrossAxisAlignment.START),
                     ft.Container(expand=True),
                     ft.Row([
-                        ft.Container(width=430),
-                        ft.Column([title_block, ft.Container(height=34), menu], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
-                        ft.Container(width=430),
+                        ft.Container(width=side_width),
+                        ft.Column([title_block, ft.Container(height=r(34)), menu], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
+                        ft.Container(width=side_width),
                     ], alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     ft.Container(expand=True),
                     ft.Row([
-                        news_card,
+                        news_card if show_side_cards else ft.Container(width=1, height=1),
                         ft.Container(expand=True),
                         ft.Container(
-                            width=470,
-                            padding=ft.padding.symmetric(horizontal=20, vertical=14),
-                            border_radius=20,
+                            width=r(470),
+                            padding=ft.Padding(left=r(20), right=r(20), top=r(14), bottom=r(14)),
+                            border_radius=r(20),
                             bgcolor=ft.Colors.with_opacity(0.36, ft.Colors.WHITE),
-                            content=ft.Text("“每一束星光，都始于练习室的微光。”", size=24, color="#8E88B8", italic=True, text_align=ft.TextAlign.RIGHT),
-                        ),
+                            content=ft.Text("“每一束星光，都始于练习室的微光。”", size=r(24), color="#8E88B8", italic=True, text_align=ft.TextAlign.RIGHT),
+                        ) if show_quote else ft.Container(width=1, height=1),
                     ], vertical_alignment=ft.CrossAxisAlignment.END),
                 ], expand=True),
             ),
-        ], expand=True)
+        ], width=vw, height=vh)
 
+        # 主页需要跟随窗口尺寸重算；其他页面在 clear() 里会移除这个 resize handler。
+        def _home_resize(e):
+            self.show_home()
+
+        self.page.on_resize = _home_resize
         self.page.add(home)
         self.page.update()
 
@@ -412,4 +455,4 @@ def main(page: ft.Page) -> None:
 
 
 if __name__ == "__main__":
-    ft.app(target=main, assets_dir="assets")
+    ft.run(main, assets_dir="assets")
