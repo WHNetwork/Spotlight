@@ -46,6 +46,18 @@ class SaveStorage:
                     FOREIGN KEY(save_id) REFERENCES saves(id)
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS diary_entries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id INTEGER NOT NULL,
+                    turn_no INTEGER NOT NULL,
+                    entry_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(save_id, turn_no),
+                    FOREIGN KEY(save_id) REFERENCES saves(id)
+                )
+            """)
             for ddl in [
                 "ALTER TABLE turns ADD COLUMN route_json TEXT",
                 "ALTER TABLE turns ADD COLUMN system_events_json TEXT",
@@ -110,3 +122,55 @@ class SaveStorage:
                 ),
             )
             conn.commit()
+
+
+    def upsert_diary_entry(self, save_id: int, turn_no: int, entry: Dict[str, Any]) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO diary_entries (save_id, turn_no, entry_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(save_id, turn_no)
+                DO UPDATE SET entry_json=excluded.entry_json, updated_at=excluded.updated_at
+                """,
+                (save_id, turn_no, json.dumps(entry, ensure_ascii=False), now, now),
+            )
+            conn.commit()
+
+    def get_diary_entries(self, save_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT turn_no, entry_json, created_at, updated_at
+                FROM diary_entries
+                WHERE save_id=?
+                ORDER BY turn_no DESC
+                LIMIT ?
+                """,
+                (save_id, limit),
+            ).fetchall()
+        result: List[Dict[str, Any]] = []
+        for row in rows:
+            try:
+                entry = json.loads(row["entry_json"] or "{}")
+            except Exception:
+                entry = {}
+            entry.setdefault("turn", int(row["turn_no"]))
+            entry.setdefault("created_at", row["created_at"])
+            entry.setdefault("updated_at", row["updated_at"])
+            result.append(entry)
+        return result
+
+    def get_diary_entry(self, save_id: int, turn_no: int) -> Optional[Dict[str, Any]]:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT entry_json FROM diary_entries WHERE save_id=? AND turn_no=?",
+                (save_id, turn_no),
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            return json.loads(row["entry_json"] or "{}")
+        except Exception:
+            return None

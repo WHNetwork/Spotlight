@@ -4,7 +4,9 @@ from typing import Optional, Dict, Any
 import json
 import threading
 import random
+import re
 from pathlib import Path
+from datetime import datetime, timedelta
 
 import flet as ft
 from loguru import logger
@@ -116,7 +118,7 @@ class KpopApp:
         self.storage = SaveStorage()
         self.save_id: Optional[int] = None
         self.state: Optional[GameState] = None
-        self.story_view = ft.Column(expand=True, scroll=ft.ScrollMode.AUTO)
+        self.story_view = ft.Column(expand=True, spacing=16)
         self.left_panel = ft.Column(width=300, scroll=ft.ScrollMode.AUTO)
         self.right_panel = ft.Column(width=340, scroll=ft.ScrollMode.AUTO)
         self.choice_row = ft.Column()
@@ -306,9 +308,9 @@ class KpopApp:
                     ft.Row([
                         profile_card if show_side_cards else ft.Container(width=1, height=1),
                         ft.Container(expand=True),
-                        top_icon("contract", "合同", lambda e: self.show_contract_page()),
-                        top_icon("diary", "日记", lambda e: self.show_diary_page()),
-                        top_icon("schedule", "行程", lambda e: self.show_schedule_page()),
+                        top_icon("contract", "合同", lambda e: self.show_static_page_picker("contract")),
+                        top_icon("diary", "日记", lambda e: self.show_static_page_picker("diary")),
+                        top_icon("schedule", "行程", lambda e: self.show_static_page_picker("schedule")),
                         top_icon("settings", "设置", lambda e: self.show_settings()),
                     ], spacing=r(14), vertical_alignment=ft.CrossAxisAlignment.START),
                     ft.Container(expand=True),
@@ -362,7 +364,25 @@ class KpopApp:
             return False
 
     def static_page_bg(self):
-        return ft.Image(src=asset("backgrounds/subpage_bg.png"), width=self.page.width or 1320, height=self.page.height or 860, fit="cover", opacity=0.86)
+        """Stack background fixed to all four edges.
+
+        In Flet desktop, Image(expand=True) inside Stack may keep intrinsic width
+        and leave a white area on high-DPI / resized windows. Stack-positioned
+        Container with DecorationImage is constrained by left/top/right/bottom
+        and therefore scales with the window.
+        """
+        return ft.Container(
+            left=0,
+            top=0,
+            right=0,
+            bottom=0,
+            bgcolor="#F8F6FC",
+            image=ft.DecorationImage(
+                src=asset("backgrounds/subpage_bg_wide.png"),
+                fit="cover",
+                opacity=0.92,
+            ),
+        )
 
     def static_page_top_bar(self, title: str, subtitle: str, icon_name: str):
         return ft.Container(
@@ -370,8 +390,8 @@ class KpopApp:
             content=ft.Row([
                 ft.Container(icon_image(icon_name, 32, 0.95), width=46, height=46, border_radius=18, bgcolor=ft.Colors.with_opacity(0.45, "#F7ECEE"), alignment=ft.Alignment.CENTER),
                 ft.Column([
-                    ft.Text(title, size=24, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
-                    ft.Text(subtitle, size=12, color=C["sub"], font_family=FONT_CN),
+                    ft.Text(title, size=self.ui_size(24), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                    ft.Text(subtitle, size=self.ui_size(12), color=C["sub"], font_family=FONT_CN),
                 ], spacing=1),
                 ft.Container(expand=True),
                 ft.Container(
@@ -381,10 +401,132 @@ class KpopApp:
                     border=ft.Border.all(1, ft.Colors.with_opacity(0.58, C["line"])),
                     ink=True,
                     on_click=lambda e: self.show_home(),
-                    content=ft.Row([icon_image("app_logo", 18, 0.9), ft.Text("返回首页", size=12, color=C["dai"], font_family=FONT_CN)], spacing=6),
+                    content=ft.Row([icon_image("app_logo", 18, 0.9), ft.Text("返回首页", size=self.ui_size(12), color=C["dai"], font_family=FONT_CN)], spacing=6),
                 ),
             ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
         )
+
+
+    def select_save_for_static_page(self, save_id: int, target: str) -> None:
+        try:
+            self.save_id = save_id
+            self.state = self.storage.load_save(save_id)
+        except Exception:
+            logger.exception("select_save_for_static_page failed")
+            self.snack("读取角色档案失败。")
+            return
+        if target == "contract":
+            self.show_contract_page()
+        elif target == "diary":
+            self.show_diary_page()
+        elif target == "schedule":
+            self.show_schedule_page()
+
+    def show_static_page_picker(self, target: str) -> None:
+        title_map = {
+            "contract": ("选择合同档案", "选择要查看哪位角色的公司与合约记录", "contract"),
+            "diary": ("选择日记本", "选择要打开哪位角色的私人日记", "diary"),
+            "schedule": ("选择行程表", "选择要查看哪位角色的近期安排", "schedule"),
+        }
+        title, subtitle, icon_name = title_map.get(target, ("选择角色档案", "先选择一个角色", "new_character"))
+
+        saves = []
+        try:
+            saves = self.storage.list_saves()
+        except Exception:
+            logger.exception("list_saves failed in static picker")
+
+        self.clear()
+        self.page.padding = 0
+        self.page.bgcolor = ft.Colors.WHITE
+
+        cards = []
+        for item in saves:
+            save_id = item.get("id")
+            raw_name = item.get("name") or item.get("save_name") or f"存档 {save_id}"
+            turn = item.get("turn") or 0
+            stage = item.get("current_stage") or "未知阶段"
+            updated_at = item.get("updated_at") or ""
+            created_at = item.get("created_at") or ""
+            label = f"{stage} · 第 {turn} 回合"
+            cards.append(
+                ft.Container(
+                    width=360,
+                    padding=18,
+                    border_radius=26,
+                    bgcolor=ft.Colors.with_opacity(0.84, ft.Colors.WHITE),
+                    border=ft.Border.all(1, ft.Colors.with_opacity(0.70, ft.Colors.WHITE)),
+                    shadow=ft.BoxShadow(
+                        blur_radius=22,
+                        spread_radius=0,
+                        color=ft.Colors.with_opacity(0.12, C["dai"]),
+                        offset=ft.Offset(0, 8),
+                    ),
+                    ink=True,
+                    on_click=lambda e, sid=save_id: self.select_save_for_static_page(sid, target),
+                    content=ft.Row([
+                        ft.Container(icon_image(icon_name, 28, 0.92), width=42, height=42, border_radius=18, bgcolor=ft.Colors.with_opacity(0.36, C["lotus"]), alignment=ft.Alignment.CENTER),
+                        ft.Column([
+                            ft.Text(str(raw_name), size=self.ui_size(16), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN, max_lines=1),
+                            ft.Text(label, size=self.ui_size(12), color=C["sub"], font_family=FONT_CN, max_lines=1),
+                            ft.Text(f"更新：{updated_at or created_at}", size=self.ui_size(10), color=C["dai"], font_family=FONT_CN, max_lines=1),
+                        ], spacing=2, expand=True),
+                    ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                )
+            )
+
+        if not cards:
+            body = ft.Container(
+                width=520,
+                padding=28,
+                border_radius=30,
+                bgcolor=ft.Colors.with_opacity(0.84, ft.Colors.WHITE),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.70, ft.Colors.WHITE)),
+                shadow=ft.BoxShadow(blur_radius=28, color=ft.Colors.with_opacity(0.12, C["dai"]), offset=ft.Offset(0, 10)),
+                content=ft.Column([
+                    ft.Text("还没有角色档案", size=self.ui_size(20), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                    ft.Text("先创建角色或读取存档后，再查看合同、日记和行程。", size=self.ui_size(13), color=C["sub"], font_family=FONT_CN, text_align=ft.TextAlign.CENTER),
+                    ft.Row([
+                        ft.Container(
+                            padding=ft.Padding(left=18, right=18, top=10, bottom=10),
+                            border_radius=22,
+                            bgcolor=ft.Colors.with_opacity(0.86, C["lotus"]),
+                            ink=True,
+                            on_click=lambda e: self.show_character_create(),
+                            content=ft.Text("创建角色", size=self.ui_size(13), color=C["ink"], font_family=FONT_CN, weight=ft.FontWeight.W_600),
+                        ),
+                        ft.Container(
+                            padding=ft.Padding(left=18, right=18, top=10, bottom=10),
+                            border_radius=22,
+                            bgcolor=ft.Colors.with_opacity(0.86, ft.Colors.WHITE),
+                            border=ft.Border.all(1, ft.Colors.with_opacity(0.54, C["line"])),
+                            ink=True,
+                            on_click=lambda e: self.show_save_list(),
+                            content=ft.Text("读取存档", size=self.ui_size(13), color=C["dai"], font_family=FONT_CN, weight=ft.FontWeight.W_600),
+                        ),
+                    ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                ], spacing=14, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            )
+        else:
+            body = ft.Column([
+                ft.Container(
+                    width=min(1180, int((self.page.width or 1320) - 80)),
+                    padding=ft.Padding(left=4, right=4, top=8, bottom=8),
+                    content=ft.Row(cards, wrap=True, spacing=18, run_spacing=18),
+                ),
+            ], expand=True, scroll=ft.ScrollMode.AUTO, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+
+        content = ft.Column([
+            self.static_page_top_bar(title, subtitle, icon_name),
+            ft.Container(
+                expand=True,
+                alignment=ft.Alignment.TOP_CENTER,
+                padding=ft.Padding(left=self.ui_size(26), right=self.ui_size(26), top=self.ui_size(16), bottom=self.ui_size(28)),
+                content=body,
+            ),
+        ], expand=True)
+        self.page.add(ft.Stack([self.static_page_bg(), content], expand=True))
+        self.page.update()
 
     def static_empty_page(self, title: str, subtitle: str, icon_name: str):
         self.clear()
@@ -441,8 +583,8 @@ class KpopApp:
                 ft.Row([
                     ft.Container(icon_image(icon_name, 24, 0.9), width=36, height=36, border_radius=18, bgcolor=ft.Colors.with_opacity(0.32, C["lotus"]), alignment=ft.Alignment.CENTER),
                     ft.Column([
-                        ft.Text(title, size=17, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
-                        ft.Text(subtitle, size=11, color=C["sub"], font_family=FONT_CN),
+                        ft.Text(title, size=self.ui_size(17), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                        ft.Text(subtitle, size=self.ui_size(11), color=C["sub"], font_family=FONT_CN),
                     ], spacing=1, expand=True),
                 ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ft.Container(height=4),
@@ -450,9 +592,11 @@ class KpopApp:
             ], spacing=10),
         )
 
-    def static_text_block(self, text: str, min_lines: int = 4, max_lines: int = 12):
+    def static_text_block(self, text: str, min_lines: int = 4, max_lines: int = 12, size: float | None = None):
+        fs = size if size is not None else self.ui_size(13)
         return ft.TextField(
             value=text,
+            expand=True,
             read_only=True,
             multiline=True,
             min_lines=min_lines,
@@ -460,9 +604,63 @@ class KpopApp:
             border_color=ft.Colors.TRANSPARENT,
             focused_border_color=ft.Colors.TRANSPARENT,
             cursor_color=ft.Colors.TRANSPARENT,
-            text_style=ft.TextStyle(font_family=FONT_CN, color=C["ink"], size=13),
+            text_style=ft.TextStyle(font_family=FONT_CN, color=C["ink"], size=fs),
             bgcolor=ft.Colors.with_opacity(0.00, ft.Colors.WHITE),
         )
+
+    def ui_scale(self) -> float:
+        try:
+            vw = float(self.page.width or 1320)
+            vh = float(self.page.height or 860)
+        except Exception:
+            vw, vh = 1320, 860
+        return max(0.72, min(1.16, min(vw / 1360, vh / 820)))
+
+    def ui_size(self, value: float) -> int:
+        return max(1, int(value * self.ui_scale()))
+
+    def subpage_layout_mode(self) -> str:
+        try:
+            vw = int(self.page.width or 1320)
+        except Exception:
+            vw = 1320
+        if vw < 940:
+            return "narrow"
+        if vw < 1180:
+            return "medium"
+        return "wide"
+
+    def static_responsive_row(self, controls: list, spacing: int | None = None):
+        mode = self.subpage_layout_mode()
+        spacing = spacing if spacing is not None else self.ui_size(18)
+        if mode == "narrow":
+            return ft.Column(controls, spacing=spacing, scroll=ft.ScrollMode.AUTO, expand=True)
+        return ft.Row(controls, spacing=spacing, vertical_alignment=ft.CrossAxisAlignment.START, expand=True)
+
+    def subpage_shell(self, title: str, subtitle: str, icon_name: str, body):
+        self.clear()
+        self.page.padding = 0
+        self.page.bgcolor = ft.Colors.WHITE
+        content = ft.Column([
+            self.static_page_top_bar(title, subtitle, icon_name),
+            ft.Container(
+                padding=ft.Padding(left=self.ui_size(24), right=self.ui_size(24), top=self.ui_size(8), bottom=self.ui_size(24)),
+                expand=True,
+                content=body,
+            ),
+        ], expand=True)
+        self.page.add(ft.Stack([self.static_page_bg(), content], expand=True))
+        self.page.update()
+
+    def subpage_resize_refresh(self, page_name: str) -> None:
+        def handler(e):
+            if page_name == "contract":
+                self.show_contract_page()
+            elif page_name == "diary":
+                self.show_diary_page()
+            elif page_name == "schedule":
+                self.show_schedule_page()
+        self.page.on_resize = handler
 
     def active_character_label(self) -> str:
         if self.state is None:
@@ -476,6 +674,7 @@ class KpopApp:
         if not self.load_latest_for_static_page():
             self.static_empty_page("合同档案", "公司、合约与边界", "contract")
             return
+        self.subpage_resize_refresh("contract")
 
         s = self.state
         ch = s.character if isinstance(s.character, dict) else {}
@@ -503,7 +702,6 @@ class KpopApp:
             f"• 续约倾向：{company.get('续约倾向', 0)}",
             f"• 出道动向：{self.player_debut_status(debut)}",
         ])
-
         notes = "\n".join([
             "• 低信任会提高请假、外出、调整训练计划时的阻力。",
             "• 资源倾斜会影响镜头、训练机会、考核关注度与后续行程。",
@@ -512,53 +710,198 @@ class KpopApp:
             "• 未成年或海外成员会额外受到监护、签证、学校和家庭沟通约束。",
         ])
 
-        self.clear()
-        self.page.padding = 0
-        self.page.bgcolor = ft.Colors.WHITE
-        main = ft.Column([
-            self.static_page_top_bar("合同档案", self.active_character_label(), "contract"),
-            ft.Container(
-                padding=ft.Padding(left=34, right=34, top=10, bottom=28),
-                expand=True,
-                content=ft.Row([
-                    self.static_page_card(
-                        "合约概览",
-                        "当前角色与公司的绑定关系",
-                        "contract",
-                        ft.Column([
-                            self.text_line("角色", ch.get("艺名") or ch.get("本名") or s.save_name, "new_character", C["lotus"]),
-                            self.text_line("身份", ch.get("身份", "练习生"), "stage", C["jade"]),
-                            self.text_line("国籍", ch.get("国籍", "未填写"), "market", C["apricot"]),
-                            self.text_line("阶段", contract_phase, "schedule", C["lavender"]),
-                            self.text_line("当前主线", s.current_mainline, "diary", C["lotus"]),
-                        ], spacing=8),
-                        width=360,
-                    ),
-                    ft.Container(
-                        expand=True,
-                        content=ft.Column([
-                            self.static_page_card("关键条款", "静态浏览版：先展示，不开放修改", "staff_boundary", self.static_text_block(risk_text, 8, 12)),
-                            self.static_page_card("风险说明", "这些内容会影响行动合法性与剧情后果", "crisis_pr", self.static_text_block(notes, 8, 12)),
-                        ], spacing=18, scroll=ft.ScrollMode.AUTO),
-                    ),
-                    self.static_page_card(
-                        "风险与边界",
-                        "公司可见的风险状态",
-                        "safety",
-                        ft.Column([
-                            self.metric_bar("合约稳定度", company.get("合约稳定度", 0), "contract", C["jade"]),
-                            self.metric_bar("公关危机风险", risks.get("公关危机风险", 0), "crisis_pr", C["rouge"], danger_high=True),
-                            self.metric_bar("私生风险", risks.get("私生风险", 0), "safety", C["rouge"], danger_high=True),
-                            self.metric_bar("边界风险", safety.get("boundary_violation_risk", 0), "staff_boundary", C["rouge"], danger_high=True),
-                            self.metric_bar("外出许可", safety.get("outing_permission", 0), "schedule", C["jade"]),
-                        ], spacing=6),
-                        width=340,
-                    ),
-                ], spacing=20, vertical_alignment=ft.CrossAxisAlignment.START),
+        mode = self.subpage_layout_mode()
+        side_w = None if mode == "narrow" else self.ui_size(340)
+        controls = [
+            self.static_page_card(
+                "合约概览", "当前角色与公司的绑定关系", "contract",
+                ft.Column([
+                    self.text_line("角色", ch.get("艺名") or ch.get("本名") or s.save_name, "new_character", C["lotus"]),
+                    self.text_line("身份", ch.get("身份", "练习生"), "stage", C["jade"]),
+                    self.text_line("国籍", ch.get("国籍", "未填写"), "market", C["apricot"]),
+                    self.text_line("阶段", contract_phase, "schedule", C["lavender"]),
+                    self.text_line("当前主线", s.current_mainline, "diary", C["lotus"]),
+                ], spacing=self.ui_size(8)),
+                width=side_w,
             ),
-        ], expand=True)
-        self.page.add(ft.Stack([self.static_page_bg(), main], expand=True))
-        self.page.update()
+            ft.Container(
+                expand=True,
+                content=ft.Column([
+                    self.static_page_card("关键条款", "静态浏览版：先展示，不开放修改", "staff_boundary", self.static_text_block(risk_text, 8, 14)),
+                    self.static_page_card("风险说明", "这些内容会影响行动合法性与剧情后果", "crisis_pr", self.static_text_block(notes, 8, 14)),
+                ], spacing=self.ui_size(18), scroll=ft.ScrollMode.AUTO, expand=True),
+            ),
+            self.static_page_card(
+                "风险与边界", "公司可见的风险状态", "safety",
+                ft.Column([
+                    self.metric_bar("合约稳定度", company.get("合约稳定度", 0), "contract", C["jade"]),
+                    self.metric_bar("公关危机风险", risks.get("公关危机风险", 0), "crisis_pr", C["rouge"], danger_high=True),
+                    self.metric_bar("私生风险", risks.get("私生风险", 0), "safety", C["rouge"], danger_high=True),
+                    self.metric_bar("边界风险", safety.get("boundary_violation_risk", 0), "staff_boundary", C["rouge"], danger_high=True),
+                    self.metric_bar("外出许可", safety.get("outing_permission", 0), "schedule", C["jade"]),
+                ], spacing=self.ui_size(6)),
+                width=side_w,
+            ),
+        ]
+        self.subpage_shell("合同档案", self.active_character_label(), "contract", self.static_responsive_row(controls))
+
+    def turn_date_for_diary(self, turn_no: int, row_created_at: str | None = None) -> str:
+        if self.state is not None and isinstance(self.state.time, dict):
+            current = str(self.state.time.get("current_date") or "")
+            current_turn = int(getattr(self.state, "turn", 0) or 0)
+            try:
+                base = datetime.strptime(current, "%Y-%m-%d")
+                delta_turns = max(0, current_turn - int(turn_no))
+                return (base - timedelta(days=delta_turns * 7)).strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        if row_created_at:
+            try:
+                return datetime.fromisoformat(str(row_created_at)).strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        return ""
+
+    def parse_json_object(self, raw: str) -> Dict[str, Any]:
+        text = str(raw or "").strip()
+        if text.startswith("```"):
+            text = text.replace("```json", "").replace("```", "").strip()
+        try:
+            return json.loads(text)
+        except Exception:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                return json.loads(text[start:end + 1])
+            raise
+
+    def generate_diary_entry_with_ds(self, row) -> Dict[str, Any]:
+        try:
+            response = json.loads(row["response_json"] or "{}")
+        except Exception:
+            response = {}
+        try:
+            events = json.loads(row["system_events_json"] or "[]")
+        except Exception:
+            events = []
+        try:
+            applied = json.loads(row["applied_diff_json"] or "{}")
+        except Exception:
+            applied = {}
+
+        turn_no = int(row["turn_no"])
+        narrative = self.display_narrative_from_response_data(response, "")
+        action = str(row["player_action"] or "").strip()
+        ch = self.state.character if self.state is not None and isinstance(self.state.character, dict) else {}
+        state_payload = self.state.as_prompt_dict() if self.state is not None else {}
+
+        hidden_context = {
+            "period": state_payload.get("period", {}),
+            "inner_life": state_payload.get("inner_life", {}),
+            "relationships": state_payload.get("relationships", {}),
+            "family": state_payload.get("family", {}),
+            "school": state_payload.get("school", {}),
+            "safety": state_payload.get("safety", {}),
+            "company": state_payload.get("company", {}),
+            "team": state_payload.get("team", {}),
+            "risks": state_payload.get("risks", {}),
+            "events": events,
+            "applied_diff": applied,
+        }
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是《星光练习室》的私人日记生成器。输出必须是严格 JSON。"
+                    "你要把回合剧情改写成角色自己的私人日记，不要照抄剧情正文。"
+                    "禁止写系统词、数值、JSON解释、少女心事系统、生理周期系统、属性变化、DS、API。"
+                    "可以把身体不适、经期困扰、友情、暧昧、被照顾、被忽视、家庭压力、学校压力、公司压迫、练习室疲惫写成含蓄的内心感受。"
+                    "文风细腻、真实、克制，第一人称，不写流水账，不靠对话堆砌。"
+                    "字段：title, content, mood, tags, related_people。content 120到220字。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps({
+                    "character": {
+                        "name": ch.get("艺名") or ch.get("本名") or (self.state.save_name if self.state else "当前角色"),
+                        "age": ch.get("年龄"),
+                        "nationality": ch.get("国籍"),
+                        "identity": ch.get("身份"),
+                    },
+                    "turn": turn_no,
+                    "date": self.turn_date_for_diary(turn_no, row["created_at"] if "created_at" in row.keys() else None),
+                    "player_action": action,
+                    "narrative": narrative,
+                    "public_summary": response.get("public_summary", ""),
+                    "hidden_context": hidden_context,
+                }, ensure_ascii=False),
+            },
+        ]
+
+        try:
+            raw = DeepSeekProvider(self.config).generate(messages, model="deepseek-v4-flash")
+            data = self.parse_json_object(raw)
+            return {
+                "turn": turn_no,
+                "date": self.turn_date_for_diary(turn_no, row["created_at"] if "created_at" in row.keys() else None),
+                "title": self.normalize_visible_text(data.get("title"))[:30] or f"第 {turn_no} 回合的记录",
+                "content": self.normalize_visible_text(data.get("content"))[:520] or self.diary_entry_from_row(row)["content"],
+                "mood": self.normalize_visible_text(data.get("mood"))[:18] or "平稳",
+                "tags": [str(x)[:10] for x in data.get("tags", []) if str(x).strip()][:6] or ["日常"],
+                "related_people": [str(x)[:12] for x in data.get("related_people", []) if str(x).strip()][:5],
+                "source": "deepseek",
+            }
+        except Exception:
+            logger.exception("generate_diary_entry_with_ds failed")
+            entry = self.diary_entry_from_row(row)
+            entry["source"] = "fallback"
+            return entry
+
+    def ensure_diary_entries(self, limit: int = 12, max_generate: int = 3) -> list[Dict[str, Any]]:
+        """Return diary entries from cache; only generate missing turns.
+
+        If generation fails, fallback entries are also cached. This prevents the
+        page from retrying the same failed DS generation every time it opens.
+        """
+        if self.save_id is None:
+            return []
+
+        rows = self.latest_turn_rows(limit)
+        cached: Dict[int, Dict[str, Any]] = {}
+        try:
+            for entry in self.storage.get_diary_entries(self.save_id, limit=limit):
+                cached[int(entry.get("turn", -1))] = entry
+        except Exception:
+            logger.exception("load cached diary entries failed")
+            cached = {}
+
+        generated = 0
+        entries: list[Dict[str, Any]] = []
+        for row in rows:
+            turn_no = int(row["turn_no"])
+            entry = cached.get(turn_no)
+            if entry is not None:
+                entry.setdefault("source", "cache")
+                entries.append(entry)
+                continue
+
+            if generated < max_generate:
+                entry = self.generate_diary_entry_with_ds(row)
+                generated += 1
+            else:
+                entry = self.diary_entry_from_row(row)
+                entry["source"] = "preview"
+
+            # Cache both DS and fallback/preview entries so reopening does not regenerate.
+            try:
+                self.storage.upsert_diary_entry(self.save_id, turn_no, entry)
+            except Exception:
+                logger.exception("upsert diary entry failed")
+            entries.append(entry)
+
+        return entries
 
     def latest_turn_rows(self, limit: int = 30) -> list:
         if self.save_id is None:
@@ -620,8 +963,8 @@ class KpopApp:
                 event_titles.append(title_ev)
 
         content = narrative.strip() or summary.strip() or "今天的内容没有被完整记录下来，只留下了行动和状态的痕迹。"
-        if len(content) > 420:
-            content = content[:420].rstrip() + "……"
+        if len(content) > 900:
+            content = content[:900].rstrip() + "……"
 
         mood = "平稳"
         mood_source = content + summary
@@ -634,7 +977,7 @@ class KpopApp:
 
         return {
             "turn": turn_no,
-            "date": self.state.time.get("current_date", "") if self.state and isinstance(self.state.time, dict) else "",
+            "date": self.turn_date_for_diary(turn_no, row["created_at"] if "created_at" in row.keys() else None),
             "title": title,
             "content": content,
             "mood": mood,
@@ -643,13 +986,51 @@ class KpopApp:
             "action": action,
         }
 
-    def show_diary_page(self) -> None:
-        if not self.load_latest_for_static_page():
+
+    def show_diary_loading_page(self, missing_count: int = 0) -> None:
+        """Show an immediate visible state before synchronous diary generation."""
+        self.clear()
+        self.page.padding = 0
+        self.page.bgcolor = ft.Colors.WHITE
+        content = ft.Column([
+            self.static_page_top_bar("私人日记", self.active_character_label(), "diary"),
+            ft.Container(
+                expand=True,
+                alignment=ft.Alignment.CENTER,
+                content=ft.Container(
+                    width=520,
+                    padding=30,
+                    border_radius=32,
+                    bgcolor=ft.Colors.with_opacity(0.86, ft.Colors.WHITE),
+                    border=ft.Border.all(1, ft.Colors.with_opacity(0.70, ft.Colors.WHITE)),
+                    shadow=ft.BoxShadow(blur_radius=30, color=ft.Colors.with_opacity(0.12, C["dai"]), offset=ft.Offset(0, 10)),
+                    content=ft.Column([
+                        ft.ProgressRing(width=34, height=34, stroke_width=3),
+                        ft.Text("正在撰写日记中", size=self.ui_size(20), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN, text_align=ft.TextAlign.CENTER),
+                    ], spacing=14, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                ),
+            ),
+        ], expand=True)
+        self.page.add(ft.Stack([self.static_page_bg(), content], expand=True))
+        self.page.update()
+
+    def count_missing_diary_entries(self, limit: int = 24) -> int:
+        if self.save_id is None:
+            return 0
+        rows = self.latest_turn_rows(limit)
+        cached_turns = set()
+        try:
+            for entry in self.storage.get_diary_entries(self.save_id, limit=limit):
+                cached_turns.add(int(entry.get("turn", -1)))
+        except Exception:
+            return min(len(rows), 3)
+        return sum(1 for row in rows if int(row["turn_no"]) not in cached_turns)
+
+    def render_diary_entries_page(self, entries: list[Dict[str, Any]]) -> None:
+        """Render diary page from already loaded/generated entries."""
+        if self.state is None:
             self.static_empty_page("私人日记", "每个角色各自保存的回合记忆", "diary")
             return
-
-        rows = self.latest_turn_rows(24)
-        entries = [self.diary_entry_from_row(row) for row in rows]
 
         if not entries:
             entries = [{
@@ -660,72 +1041,88 @@ class KpopApp:
                 "mood": "等待",
                 "tags": ["开始"],
                 "events": [],
+                "related_people": [],
                 "action": "",
             }]
 
         entry_cards = []
         for entry in entries:
+            tags = entry.get("tags") or ["日常"]
+            related = entry.get("related_people") or []
             entry_cards.append(
                 self.static_page_card(
-                    f"第 {entry['turn']} 回合 · {entry['title']}",
-                    f"{entry.get('date') or '日期未定'} · 心情：{entry['mood']}",
+                    f"第 {entry.get('turn')} 回合 · {entry.get('title', '私人记录')}",
+                    f"{entry.get('date') or '日期未定'} · 心情：{entry.get('mood', '平稳')}",
                     "diary",
                     ft.Column([
-                        self.static_text_block(entry["content"], 4, 9),
-                        ft.Row([self.mini_chip(tag, C["lotus"]) for tag in entry["tags"]], wrap=True, spacing=6, run_spacing=6),
-                        ft.Text(("相关提醒：" + "；".join(entry["events"])) if entry["events"] else "没有额外提醒。", size=11, color=C["sub"], font_family=FONT_CN),
-                    ], spacing=8),
+                        self.static_text_block(entry.get("content", ""), 7, 18),
+                        ft.Row([self.mini_chip(tag, C["lotus"]) for tag in tags[:6]], wrap=True, spacing=6, run_spacing=6),
+                        ft.Row([self.mini_chip(x, C["jade"]) for x in related[:5]], wrap=True, spacing=6, run_spacing=6) if related else ft.Container(height=1),
+                    ], spacing=self.ui_size(8)),
                 )
             )
 
-        self.clear()
-        self.page.padding = 0
-        self.page.bgcolor = ft.Colors.WHITE
-        main = ft.Column([
-            self.static_page_top_bar("私人日记", self.active_character_label(), "diary"),
-            ft.Container(
-                padding=ft.Padding(left=34, right=34, top=10, bottom=28),
-                expand=True,
-                content=ft.Row([
-                    self.static_page_card(
-                        "日记说明",
-                        "静态浏览版",
-                        "diary",
-                        ft.Column([
-                            ft.Text("日记跟随当前角色存档保存，不同角色之间互不共享。", size=13, color=C["ink"], font_family=FONT_CN),
-                            ft.Text("第一版先根据已保存回合生成可浏览记录；后续可以升级为 DeepSeek 在每回合 JSON 里直接返回 diary_entry 并入库存档。", size=12, color=C["sub"], font_family=FONT_CN),
-                            ft.Divider(height=16, color=ft.Colors.with_opacity(0.32, C["line"])),
-                            self.text_line("当前角色", self.state.character.get("艺名") or self.state.save_name, "new_character", C["lotus"]),
-                            self.text_line("记录数量", len(entries), "schedule", C["jade"]),
-                            self.text_line("最近回合", self.state.turn, "stage", C["apricot"]),
-                        ], spacing=8),
-                        width=330,
-                    ),
-                    ft.Container(
-                        expand=True,
-                        content=ft.Column(entry_cards, spacing=18, scroll=ft.ScrollMode.AUTO),
-                    ),
-                ], spacing=20, vertical_alignment=ft.CrossAxisAlignment.START),
-            ),
-        ], expand=True)
-        self.page.add(ft.Stack([self.static_page_bg(), main], expand=True))
-        self.page.update()
+        mode = self.subpage_layout_mode()
+        left_w = None if mode == "narrow" else self.ui_size(330)
+        intro_card = self.static_page_card(
+            "日记说明", "当前角色的私人记录",
+            "diary",
+            ft.Column([
+                ft.Text("日记跟随当前角色存档保存，不同角色之间互不共享。", size=self.ui_size(13), color=C["ink"], font_family=FONT_CN),
+                ft.Text("打开本页时，会把缺失回合交给叙事模型改写成私人日记并缓存到当前存档。已经写好的日记会直接读取，不会重复生成。", size=self.ui_size(12), color=C["sub"], font_family=FONT_CN),
+                ft.Divider(height=self.ui_size(16), color=ft.Colors.with_opacity(0.32, C["line"])),
+                self.text_line("当前角色", self.state.character.get("艺名") or self.state.save_name, "new_character", C["lotus"]),
+                self.text_line("记录数量", len(entries), "schedule", C["jade"]),
+                self.text_line("最近回合", self.state.turn, "stage", C["apricot"]),
+            ], spacing=self.ui_size(8)),
+            width=left_w,
+        )
+        entries_view = ft.Container(expand=True, content=ft.Column(entry_cards, spacing=self.ui_size(18), scroll=ft.ScrollMode.AUTO, expand=True))
+        self.subpage_shell("私人日记", self.active_character_label(), "diary", self.static_responsive_row([intro_card, entries_view]))
+
+    def show_diary_page(self) -> None:
+        if not self.load_latest_for_static_page():
+            self.static_empty_page("私人日记", "每个角色各自保存的回合记忆", "diary")
+            return
+        self.subpage_resize_refresh("diary")
+
+        missing = self.count_missing_diary_entries(limit=24)
+        if missing <= 0:
+            entries = self.ensure_diary_entries(limit=24, max_generate=0)
+            self.render_diary_entries_page(entries)
+            return
+
+        # Show loading immediately, then generate in a background thread.
+        # Without the thread, Flet repaints only after the synchronous DS calls finish,
+        # so the user never actually sees "正在撰写日记中".
+        self.show_diary_loading_page(min(missing, 3))
+
+        def worker():
+            try:
+                entries = self.ensure_diary_entries(limit=24, max_generate=3)
+                self.render_diary_entries_page(entries)
+            except Exception:
+                logger.exception("diary generation worker failed")
+                self.snack("日记生成失败，已保留当前存档。")
+
+        threading.Thread(target=worker, daemon=True).start()
+
 
     def show_schedule_page(self) -> None:
         if not self.load_latest_for_static_page():
             self.static_empty_page("行程表", "训练、考核与恢复安排", "schedule")
             return
+        self.subpage_resize_refresh("schedule")
 
         s = self.state
         time_data = s.time if isinstance(s.time, dict) else {}
         profile = s.schedule_profile if isinstance(s.schedule_profile, dict) else {}
-        skill_gap = s.skill_last_practiced if isinstance(s.skill_last_practiced, dict) else {}
         body = s.body if isinstance(s.body, dict) else {}
-
         current_profile = profile.get("current_profile", {}) if isinstance(profile.get("current_profile", {}), dict) else {}
+
         future_items = [
             ("今天", s.current_schedule or "根据状态完成当日安排", "schedule"),
-            ("本回合", f"预计跨度：{time_data.get('turn_duration_days', 7)} 天", "calendar" if False else "schedule"),
+            ("本回合", f"预计跨度：{time_data.get('turn_duration_days', 7)} 天", "schedule"),
             ("月末考核", f"倒计时：{time_data.get('next_evaluation_days', time_data.get('assessment_countdown_days', '未知'))} 天", "stage"),
             ("恢复安排", "体力低于 35 或伤病风险高于 60 时，建议优先恢复", "health"),
             ("训练维护", "长期不练的技能会先掉手感，之后才可能退化属性", "training"),
@@ -746,58 +1143,44 @@ class KpopApp:
                 "• 回归窗口、合约窗口、危机窗口会改变行程优先级。",
             ])
 
-        self.clear()
-        self.page.padding = 0
-        self.page.bgcolor = ft.Colors.WHITE
-        main = ft.Column([
-            self.static_page_top_bar("行程表", self.active_character_label(), "schedule"),
+        mode = self.subpage_layout_mode()
+        side_w = None if mode == "narrow" else self.ui_size(360)
+        controls = [
+            self.static_page_card(
+                "未来节点", "当前存档的近期安排",
+                "schedule",
+                ft.Column([self.text_line(day, text, icon_name, C["lotus"]) for day, text, icon_name in future_items], spacing=self.ui_size(9)),
+                width=side_w,
+            ),
             ft.Container(
-                padding=ft.Padding(left=34, right=34, top=10, bottom=28),
                 expand=True,
-                content=ft.Row([
+                content=ft.Column([
+                    self.static_page_card("阶段节奏", "按当前身份给出的日程逻辑", "training", self.static_text_block(plan_text, 8, 14)),
                     self.static_page_card(
-                        "未来节点",
-                        "当前存档的近期安排",
+                        "时间压力", "当前节奏的风险提示",
                         "schedule",
                         ft.Column([
-                            self.text_line(day, text, icon_name, C["lotus"]) for day, text, icon_name in future_items
-                        ], spacing=9),
-                        width=390,
+                            self.metric_bar("行程负荷", profile.get("workload_pressure", 0), "schedule", C["apricot"], danger_high=True),
+                            self.metric_bar("体力", body.get("体力", 0), "health", C["jade"]),
+                            self.metric_bar("睡眠质量", body.get("睡眠质量", 0), "period", C["lotus"]),
+                            self.metric_bar("肌肉疲劳", body.get("肌肉疲劳", 0), "dance", C["rouge"], danger_high=True),
+                            self.metric_bar("伤病风险", body.get("伤病风险", 0), "crisis_pr", C["rouge"], danger_high=True),
+                        ], spacing=self.ui_size(6)),
                     ),
-                    ft.Container(
-                        expand=True,
-                        content=ft.Column([
-                            self.static_page_card("阶段节奏", "按当前身份给出的日程逻辑", "training", self.static_text_block(plan_text, 8, 12)),
-                            self.static_page_card(
-                                "时间压力",
-                                "不是任务清单，是当前节奏的风险提示",
-                                "clock" if False else "schedule",
-                                ft.Column([
-                                    self.metric_bar("行程负荷", profile.get("workload_pressure", 0), "schedule", C["apricot"], danger_high=True),
-                                    self.metric_bar("体力", body.get("体力", 0), "health", C["jade"]),
-                                    self.metric_bar("睡眠质量", body.get("睡眠质量", 0), "period", C["lotus"]),
-                                    self.metric_bar("肌肉疲劳", body.get("肌肉疲劳", 0), "dance", C["rouge"], danger_high=True),
-                                    self.metric_bar("伤病风险", body.get("伤病风险", 0), "crisis_pr", C["rouge"], danger_high=True),
-                                ], spacing=6),
-                            ),
-                        ], spacing=18, scroll=ft.ScrollMode.AUTO),
-                    ),
-                    self.static_page_card(
-                        "训练构成",
-                        "当前阶段的时间分布",
-                        "stage",
-                        ft.Column(
-                            [self.metric_bar(k, v, "training", C["jade"]) for k, v in current_profile.items()] or
-                            [ft.Text("暂无行程构成。", size=12, color=C["sub"], font_family=FONT_CN)],
-                            spacing=6,
-                        ),
-                        width=340,
-                    ),
-                ], spacing=20, vertical_alignment=ft.CrossAxisAlignment.START),
+                ], spacing=self.ui_size(18), scroll=ft.ScrollMode.AUTO, expand=True),
             ),
-        ], expand=True)
-        self.page.add(ft.Stack([self.static_page_bg(), main], expand=True))
-        self.page.update()
+            self.static_page_card(
+                "训练构成", "当前阶段的时间分布",
+                "stage",
+                ft.Column(
+                    [self.metric_bar(k, v, "training", C["jade"]) for k, v in current_profile.items()] or
+                    [ft.Text("暂无行程构成。", size=self.ui_size(12), color=C["sub"], font_family=FONT_CN)],
+                    spacing=self.ui_size(6),
+                ),
+                width=side_w,
+            ),
+        ]
+        self.subpage_shell("行程表", self.active_character_label(), "schedule", self.static_responsive_row(controls))
 
     def show_settings(self) -> None:
         self.clear()
@@ -847,6 +1230,85 @@ class KpopApp:
         ], spacing=14, scroll=ft.ScrollMode.AUTO), padding=30))
         self.page.update()
 
+
+    def normalize_character_name_key(self, name: Any) -> str:
+        return re.sub(r"\s+", "", str(name or "").strip()).lower()
+
+    def character_save_name(self, character: Dict[str, Any]) -> str:
+        art = str(character.get("艺名") or "").strip()
+        real = str(character.get("本名") or "").strip()
+        return art or real or "星光练习室存档"
+
+    def existing_character_name_keys(self) -> set[str]:
+        keys: set[str] = set()
+        try:
+            saves = self.storage.list_saves()
+        except Exception:
+            logger.exception("list_saves failed for duplicate check")
+            saves = []
+
+        for item in saves:
+            for raw in [item.get("name"), item.get("save_name")]:
+                key = self.normalize_character_name_key(raw)
+                if key:
+                    keys.add(key)
+            sid = item.get("id")
+            if sid is None:
+                continue
+            try:
+                state = self.storage.load_save(int(sid))
+                ch = state.character if isinstance(state.character, dict) else {}
+                for raw in [state.save_name, ch.get("艺名"), ch.get("本名")]:
+                    key = self.normalize_character_name_key(raw)
+                    if key:
+                        keys.add(key)
+            except Exception:
+                continue
+        return keys
+
+    def validate_character_name_unique(self, character: Dict[str, Any]) -> list[str]:
+        existing = self.existing_character_name_keys()
+        errors: list[str] = []
+        art = str(character.get("艺名") or "").strip()
+        real = str(character.get("本名") or "").strip()
+        save_name = self.character_save_name(character)
+        for label, value in [("艺名", art), ("本名", real), ("存档名", save_name)]:
+            key = self.normalize_character_name_key(value)
+            if key and key in existing:
+                errors.append(f"{label}“{value}”已经存在。请换一个名字，避免角色档案串档。")
+        if art and real and self.normalize_character_name_key(art) == self.normalize_character_name_key(real):
+            errors.append("艺名和本名不能完全一样。")
+        return errors
+
+    def random_character_names(self, nationality: str | None = None) -> Dict[str, str]:
+        text = str(nationality or "").strip().lower()
+        cn_surnames = ["林", "沈", "许", "温", "姜", "顾", "程", "苏", "夏", "宋", "陆", "白", "乔", "叶", "唐", "周"]
+        cn_given = ["子恩", "若宁", "予夏", "知遥", "安禾", "念初", "芷晴", "沐言", "星眠", "南栀", "清梨", "云舒", "听澜", "以棠", "书妍", "洛笙"]
+        kr_surnames = ["韩", "裴", "姜", "尹", "郑", "金", "申", "崔", "柳", "朴"]
+        kr_given = ["夏恩", "智允", "瑞雅", "娜玹", "宥真", "多贤", "世琳", "恩序", "旼书", "艺琳", "秀妍", "采原"]
+        jp_surnames = ["星野", "白石", "七濑", "樱井", "花泽", "月岛", "森川", "浅仓"]
+        jp_given = ["遥", "凛", "美绪", "结夏", "千寻", "纱良", "优衣", "明里"]
+        global_given = ["Mia", "Lia", "Nina", "Iris", "Luna", "Sena", "Rina", "Ari", "Ena", "Yuna", "Sora", "Mina"]
+        stage_roots = ["Luna", "Sera", "Yuna", "Mina", "Rina", "Aria", "Navi", "Sia", "Lia", "Nari", "Moa", "Ena", "Rhea", "Ivy", "Nell", "Sori"]
+        stage_suffix = ["", "", "", "a", "i", "e", "n", "ly", "star", "one"]
+        existing = self.existing_character_name_keys()
+        for _ in range(100):
+            if any(x in text for x in ["韩国", "korea", "korean", "kr", "韩"]):
+                real = random.choice(kr_surnames) + random.choice(kr_given)
+            elif any(x in text for x in ["日本", "japan", "japanese", "jp", "日"]):
+                real = random.choice(jp_surnames) + random.choice(jp_given)
+            elif any(x in text for x in ["海外", "美国", "thai", "泰国", "global", "us", "english"]):
+                real = random.choice(global_given)
+            else:
+                real = random.choice(cn_surnames) + random.choice(cn_given)
+            art = random.choice(stage_roots) + random.choice(stage_suffix)
+            if random.random() < 0.25:
+                art = random.choice(["星禾", "浅月", "清梨", "知夏", "南音", "白露", "青栀", "月宁"])
+            if self.normalize_character_name_key(real) not in existing and self.normalize_character_name_key(art) not in existing and self.normalize_character_name_key(real) != self.normalize_character_name_key(art):
+                return {"艺名": art, "本名": real}
+        stamp = random.randint(100, 999)
+        return {"艺名": f"Stella{stamp}", "本名": f"星光练习生{stamp}"}
+
     def show_character_create(self) -> None:
         self.clear()
         fields: Dict[str, ft.TextField] = {}
@@ -865,10 +1327,43 @@ class KpopApp:
         )
         status = ft.Text("", color=ft.Colors.RED)
 
+        def randomize_names(e=None):
+            names = self.random_character_names(fields["国籍"].value)
+            fields["艺名"].value = names["艺名"]
+            fields["本名"].value = names["本名"]
+            status.color = C["dai"]
+            status.value = f"已随机生成：艺名 {names['艺名']} / 本名 {names['本名']}。"
+            self.page.update()
+
+        def randomize_art_name(e=None):
+            names = self.random_character_names(fields["国籍"].value)
+            fields["艺名"].value = names["艺名"]
+            status.color = C["dai"]
+            status.value = f"已随机生成艺名：{names['艺名']}。"
+            self.page.update()
+
+        def check_duplicate(e=None):
+            raw_character: Dict[str, Any] = {"身份": identity.value, "出身来源标签": [s.strip() for s in (source_tags.value or "").split(",") if s.strip()], "时间线": timeline.value, "生理周期系统": period_mode.value}
+            for k, field in fields.items():
+                raw_character[k] = field.value or ""
+            raw_character["艺名"] = str(raw_character.get("艺名") or "").strip()
+            raw_character["本名"] = str(raw_character.get("本名") or "").strip()
+            errors = self.validate_character_name_unique(raw_character)
+            if errors:
+                status.color = ft.Colors.RED
+                status.value = "重名校验未通过：\n" + "\n".join(f"• {x}" for x in errors)
+            else:
+                status.color = C["jade"]
+                status.value = f"重名校验通过。存档将命名为：{self.character_save_name(raw_character)}"
+            self.page.update()
+
         def create(e):
             raw_character: Dict[str, Any] = {"身份": identity.value, "出身来源标签": [s.strip() for s in (source_tags.value or "").split(",") if s.strip()], "时间线": timeline.value, "生理周期系统": period_mode.value}
             for k, field in fields.items():
                 raw_character[k] = field.value or ""
+            raw_character["艺名"] = str(raw_character.get("艺名") or "").strip()
+            raw_character["本名"] = str(raw_character.get("本名") or "").strip()
+            raw_character["国籍"] = str(raw_character.get("国籍") or "").strip()
             try:
                 normalized = validate_character_input(raw_character)
             except CharacterValidationError as exc:
@@ -876,6 +1371,16 @@ class KpopApp:
                 status.value = "角色创建信息有误：\n" + "\n".join(f"• {e}" for e in exc.errors)
                 self.page.update()
                 return
+
+            normalized.data["艺名"] = str(normalized.data.get("艺名") or "").strip()
+            normalized.data["本名"] = str(normalized.data.get("本名") or "").strip()
+            duplicate_errors = self.validate_character_name_unique(normalized.data)
+            if duplicate_errors:
+                status.color = ft.Colors.RED
+                status.value = "重名校验未通过：\n" + "\n".join(f"• {e}" for e in duplicate_errors)
+                self.page.update()
+                return
+
             if normalized.warnings:
                 status.color = ft.Colors.ORANGE
                 status.value = "提示：\n" + "\n".join(f"• {w}" for w in normalized.warnings)
@@ -885,6 +1390,7 @@ class KpopApp:
             normalized.data["avatar"] = self.random_avatar_path()
             engine = TurnEngine(self.storage, self.config)
             state = engine.create_initial_state(normalized.data)
+            state.save_name = self.character_save_name(normalized.data)
             self.save_id = self.storage.create_save(state)
             self.state = state
             self.show_game(initial=True)
@@ -900,9 +1406,39 @@ class KpopApp:
                 ft.Text("这项只在角色创建时决定。想要完全不出现生理期，就选“关闭”。", size=12, color=C["sub"], font_family=FONT_CN),
             ], spacing=8),
         )
+        name_tools = ft.Row([
+            ft.Container(
+                padding=ft.Padding(left=14, right=14, top=8, bottom=8),
+                border_radius=18,
+                bgcolor=ft.Colors.with_opacity(0.82, C["lotus"]),
+                ink=True,
+                on_click=randomize_names,
+                content=ft.Row([icon_image("new_character", 18), ft.Text("随机姓名 / 艺名", size=12, color=C["ink"], font_family=FONT_CN, weight=ft.FontWeight.W_600)], spacing=6),
+            ),
+            ft.Container(
+                padding=ft.Padding(left=14, right=14, top=8, bottom=8),
+                border_radius=18,
+                bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.52, C["line"])),
+                ink=True,
+                on_click=randomize_art_name,
+                content=ft.Row([icon_image("stage", 18), ft.Text("只随机艺名", size=12, color=C["dai"], font_family=FONT_CN, weight=ft.FontWeight.W_600)], spacing=6),
+            ),
+            ft.Container(
+                padding=ft.Padding(left=14, right=14, top=8, bottom=8),
+                border_radius=18,
+                bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.52, C["line"])),
+                ink=True,
+                on_click=check_duplicate,
+                content=ft.Row([icon_image("save_archive", 18), ft.Text("检查重名", size=12, color=C["dai"], font_family=FONT_CN, weight=ft.FontWeight.W_600)], spacing=6),
+            ),
+        ], spacing=10, wrap=True)
+
         form = ft.Column([
             ft.Text("🎤 角色创建", size=28, weight=ft.FontWeight.BOLD, font_family=FONT_CN, color=C["ink"]),
-            
+            ft.Text("存档会优先使用艺名命名；没有艺名时使用本名。创建前会校验重名。", size=12, color=C["sub"], font_family=FONT_CN),
+            name_tools,
             identity, source_tags, timeline, period_card, ft.Divider()
         ], spacing=10, scroll=ft.ScrollMode.AUTO)
         left, right = ft.Column(spacing=8), ft.Column(spacing=8)
@@ -964,7 +1500,7 @@ class KpopApp:
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         ]
         if subtitle:
-            items.append(ft.Text(subtitle, size=11, color=C["sub"], font_family=FONT_CN))
+            items.append(ft.Text(subtitle, size=self.ui_size(11), color=C["sub"], font_family=FONT_CN))
         return ft.Column(items, spacing=2)
 
     def metric_bar(self, label: str, value, icon_name: str = "app_logo", color: str = "#93C9B7", danger_high: bool = False):
@@ -1368,15 +1904,15 @@ class KpopApp:
             expand=True,
             content=self.soft_card(
                 ft.Column([
-                ft.Row([
-                    ft.Container(icon_image(icon_name, 24, 0.92), width=36, height=36, border_radius=18, bgcolor=ft.Colors.with_opacity(0.35, accent), alignment=ft.Alignment.CENTER),
-                    ft.Column([
-                        ft.Text(title, size=17, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
-                        ft.Text(subtitle, size=11, color=C["sub"], font_family=FONT_CN),
-                    ], spacing=0, expand=True),
-                ], spacing=10),
-                body_control,
-            ], spacing=12),
+                    ft.Row([
+                        ft.Container(icon_image(icon_name, 24, 0.92), width=36, height=36, border_radius=18, bgcolor=ft.Colors.with_opacity(0.35, accent), alignment=ft.Alignment.CENTER),
+                        ft.Column([
+                            ft.Text(title, size=self.ui_size(17), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                            ft.Text(subtitle, size=self.ui_size(11), color=C["sub"], font_family=FONT_CN),
+                        ], spacing=0, expand=True),
+                    ], spacing=10),
+                    body_control,
+                ], spacing=12, expand=True),
                 padding=18,
                 radius=24,
                 bgcolor=ft.Colors.with_opacity(0.84, ft.Colors.WHITE),
@@ -1754,7 +2290,7 @@ class KpopApp:
         self.page.bgcolor = "#FBFCFF"
         self.is_generating = False
         self.choice_buttons = []
-        self.story_view = ft.Column(expand=True, scroll=ft.ScrollMode.AUTO, spacing=16)
+        self.story_view = ft.Column(expand=True, spacing=16)
         self.left_panel = ft.Column(width=300, scroll=ft.ScrollMode.AUTO, spacing=12)
         self.right_panel = ft.Column(width=320, scroll=ft.ScrollMode.AUTO, spacing=12)
         self.choice_row = ft.Column(spacing=10)
@@ -1876,9 +2412,9 @@ class KpopApp:
 
         main_row = ft.Row([
             self.soft_card(self.left_panel, padding=14, radius=26, bgcolor=ft.Colors.with_opacity(0.72, ft.Colors.WHITE), width=322),
-            ft.Container(self.story_view, expand=True, padding=ft.Padding(left=10, right=10, top=4, bottom=4)),
+            ft.Container(content=self.story_view, expand=True, padding=ft.Padding(left=10, right=10, top=4, bottom=4)),
             self.soft_card(self.right_panel, padding=14, radius=26, bgcolor=ft.Colors.with_opacity(0.72, ft.Colors.WHITE), width=342),
-        ], expand=True, spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
+        ], expand=True, spacing=14, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
 
         bottom = self.soft_card(self.choice_row, padding=14, radius=24, bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE))
 
