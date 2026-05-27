@@ -11,6 +11,8 @@ from core.llm import LLMError, DeepSeekProvider
 from core.models import GameState, Choice
 from core.storage import SaveStorage
 from core.action_validator import ActionBlockedError
+from core.character_validator import validate_character_input, CharacterValidationError
+from core.relationship_system import relationship_ui_summary
 
 
 def icon(name: str):
@@ -119,19 +121,32 @@ class KpopApp:
         identity = ft.Dropdown(label="身份", width=470, options=[ft.dropdown.Option("素人学生被星探发现"), ft.dropdown.Option("富二代 / 优渥家庭出身"), ft.dropdown.Option("某位 KPOP 顶流爱豆的妹妹 / 亲属"), ft.dropdown.Option("海外追梦练习生"), ft.dropdown.Option("前运动员转型练习生"), ft.dropdown.Option("选秀节目淘汰者"), ft.dropdown.Option("小公司前成员 / 再出道"), ft.dropdown.Option("自定义身份")], value="素人学生被星探发现")
         source_tags = ft.TextField(label="出身来源标签，多个用逗号分隔", width=470, hint_text="街头星探, 校园舞蹈社, 前运动员")
         timeline = ft.Dropdown(label="时间线", width=470, options=[ft.dropdown.Option("练习生阶段"), ft.dropdown.Option("出道前一天"), ft.dropdown.Option("回归瓶颈期"), ft.dropdown.Option("续约前一年")], value="练习生阶段")
+        period_mode = ft.Dropdown(label="生理周期系统", width=470, options=[ft.dropdown.Option("简化"), ft.dropdown.Option("开启"), ft.dropdown.Option("关闭")], value="简化")
         status = ft.Text("", color=ft.Colors.RED)
 
         def create(e):
-            character: Dict[str, Any] = {"身份": identity.value, "出身来源标签": [s.strip() for s in (source_tags.value or "").split(",") if s.strip()], "时间线": timeline.value}
+            raw_character: Dict[str, Any] = {"身份": identity.value, "出身来源标签": [s.strip() for s in (source_tags.value or "").split(",") if s.strip()], "时间线": timeline.value, "生理周期系统": period_mode.value}
             for k, field in fields.items():
-                character[k] = field.value or ""
+                raw_character[k] = field.value or ""
+            try:
+                normalized = validate_character_input(raw_character)
+            except CharacterValidationError as exc:
+                status.color = ft.Colors.RED
+                status.value = "角色创建信息有误：\n" + "\n".join(f"• {e}" for e in exc.errors)
+                self.page.update()
+                return
+            if normalized.warnings:
+                status.color = ft.Colors.ORANGE
+                status.value = "提示：\n" + "\n".join(f"• {w}" for w in normalized.warnings)
+                self.page.update()
+
             engine = TurnEngine(self.storage, self.config, use_mock=True)
-            state = engine.create_initial_state(character)
+            state = engine.create_initial_state(normalized.data)
             self.save_id = self.storage.create_save(state)
             self.state = state
             self.show_game(initial=True)
 
-        form = ft.Column([ft.Text("🎤 角色创建", size=28, weight=ft.FontWeight.BOLD), identity, source_tags, timeline, ft.Divider()], spacing=10, scroll=ft.ScrollMode.AUTO)
+        form = ft.Column([ft.Text("🎤 角色创建", size=28, weight=ft.FontWeight.BOLD), identity, source_tags, timeline, period_mode, ft.Divider()], spacing=10, scroll=ft.ScrollMode.AUTO)
         left, right = ft.Column(spacing=8), ft.Column(spacing=8)
         for i, label in enumerate(labels):
             (left if i % 2 == 0 else right).controls.append(fields[label])
@@ -187,9 +202,9 @@ class KpopApp:
         s = self.state
         self.left_panel.controls.clear()
         self.right_panel.controls.clear()
-        self.left_panel.controls.extend([ft.Text("状态", size=20, weight=ft.FontWeight.BOLD), ft.Text(f"回合：{s.turn}"), ft.Text(f"阶段：{s.current_stage}"), ft.Text(f"主线：{s.current_mainline}"), ft.Text(f"行程：{s.current_schedule}"), ft.Divider(), ft.Text("天赋", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.talents.items()], ft.Divider(), ft.Text("职业属性", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.career.items()], ft.Divider(), ft.Text("身体状态", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.body.items()], ft.Divider(), ft.Text("心理状态", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.mind.items()]])
+        self.left_panel.controls.extend([ft.Text("状态", size=20, weight=ft.FontWeight.BOLD), ft.Text(f"回合：{s.turn}"), ft.Text(f"阶段：{s.current_stage}"), ft.Text(f"主线：{s.current_mainline}"), ft.Text(f"行程：{s.current_schedule}"), ft.Text(f"日期：{s.time.get('current_date')} / 本回合：{s.time.get('turn_duration_days')} 天"), ft.Text(f"年龄段：{s.age_context.get('age_group')} / 未成年：{s.age_context.get('is_minor')} / 考核倒计时：{s.time.get('next_evaluation_days')} 天"), ft.Divider(), ft.Text("社会环境", weight=ft.FontWeight.BOLD), ft.Text(f"国籍：{s.social_context.get('nationality')} / 语言压力：{s.social_context.get('language_barrier')} / 文化适应：{s.social_context.get('cultural_adaptation')}"), ft.Text(f"学校：{s.school.get('school_type')} / 出勤压力：{s.school.get('attendance_pressure')} / 作业压力：{s.school.get('homework_pressure')}"), ft.Text(f"家庭支持：{s.family.get('emotional_support')} / 家庭冲突：{s.family.get('conflict_level')} / 控制欲：{s.family.get('control_level')}"), ft.Divider(), ft.Text("天赋", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.talents.items()], ft.Divider(), ft.Text("职业属性", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.career.items()], ft.Divider(), ft.Text("已解锁能力", weight=ft.FontWeight.BOLD), *[ft.Text(f"• {a}") for a in s.abilities[-8:]], ft.Divider(), ft.Text("生理周期", weight=ft.FontWeight.BOLD), ft.Text(f"模式: {s.period.get('mode')} / 阶段: {s.period.get('phase')} / day {s.period.get('cycle_day')}"), ft.Text(f"痛感: {s.period.get('pain_level')} / 压力: {s.period.get('flow_pressure')} / 不规律风险: {s.period.get('irregularity_risk')}"), ft.Divider(), ft.Text("身体状态", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.body.items()], ft.Divider(), ft.Text("心理状态", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.mind.items()]])
         route = s.route_history[-1] if s.route_history else None
-        self.right_panel.controls.extend([ft.Text("系统", size=20, weight=ft.FontWeight.BOLD), ft.Text(f"模型策略：{self.config.model_policy}"), ft.Text(f"最近模型：{route.actual_model if route else '尚未调用'}"), ft.Text(f"最近回合类型：{route.turn_kind if route else '无'}"), ft.Divider(), ft.Text("公司", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.company.items()], ft.Divider(), ft.Text("团队", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.team.items()], ft.Divider(), ft.Text("风险", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.risks.items()], ft.Divider(), ft.Text("状态效果", weight=ft.FontWeight.BOLD), *[ft.Text(f"• {k}: {v} 回合") for k, v in s.status_effects.items()], ft.Divider(), ft.Text("活跃危机", weight=ft.FontWeight.BOLD), *[ft.Text(f"• {c.title} / {c.stage} / heat={c.heat}") for c in s.active_crises if c.stage not in {'closed','converted'}], ft.Divider(), ft.Text("系统事件", weight=ft.FontWeight.BOLD), *[ft.Text(f"• {e.title} [{e.source_system}]") for e in s.system_events[-6:]], ft.Divider(), ft.Text("长期 Flag", weight=ft.FontWeight.BOLD), *[ft.Text(f"• {flag}") for flag in s.flags[-8:]]])
+        self.right_panel.controls.extend([ft.Text("系统", size=20, weight=ft.FontWeight.BOLD), ft.Text(f"模型策略：{self.config.model_policy}"), ft.Text(f"最近模型：{route.actual_model if route else '尚未调用'}"), ft.Text(f"最近回合类型：{route.turn_kind if route else '无'}"), ft.Divider(), ft.Text("公司", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.company.items()], ft.Divider(), ft.Text("团队", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.team.items()], ft.Divider(), ft.Text("风险", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.risks.items()], ft.Divider(), ft.Text("少女心事", weight=ft.FontWeight.BOLD), *[ft.Text(f"{k}: {v}") for k, v in s.inner_life.items()], ft.Text("心事条目", weight=ft.FontWeight.BOLD), *[ft.Text(f"• {sec.get('type')} / {sec.get('target')} / {sec.get('intensity')}") for sec in s.inner_secrets[-5:]], ft.Divider(), ft.Text("关系状态", weight=ft.FontWeight.BOLD), *[ft.Text(f"• {relationship_ui_summary(name, rel, s)}") for name, rel in list(s.relationships.items())[:6]], ft.Divider(), ft.Text("安全/前后辈", weight=ft.FontWeight.BOLD), ft.Text(f"出入许可：{s.safety.get('outing_permission')} / 宿舍安全：{s.safety.get('dorm_security')} / 边界风险：{s.safety.get('boundary_violation_risk')}"), ft.Text(f"敬语适应：{s.hierarchy.get('honorific_adaptation')} / 礼仪压力：{s.hierarchy.get('etiquette_pressure')} / 行业口碑：{s.hierarchy.get('industry_reputation')}"), ft.Divider(), ft.Text("状态效果", weight=ft.FontWeight.BOLD), *[ft.Text(f"• {k}: {v} 回合") for k, v in s.status_effects.items()], ft.Divider(), ft.Text("活跃危机", weight=ft.FontWeight.BOLD), *[ft.Text(f"• {c.title} / {c.stage} / heat={c.heat}") for c in s.active_crises if c.stage not in {'closed','converted'}], ft.Divider(), ft.Text("系统事件", weight=ft.FontWeight.BOLD), *[ft.Text(f"• {e.title} [{e.source_system}]") for e in s.system_events[-6:]], ft.Divider(), ft.Text("长期 Flag", weight=ft.FontWeight.BOLD), *[ft.Text(f"• {flag}") for flag in s.flags[-8:]], ft.Divider(), ft.Text("初始分配摘要", weight=ft.FontWeight.BOLD), *[ft.Text(f"• {line}") for line in s.initial_allocation_log[-6:]]])
 
     def refresh_choices(self) -> None:
         assert self.state is not None

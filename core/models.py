@@ -72,6 +72,89 @@ class GameState(BaseModel):
 
     character: Dict[str, Any] = Field(default_factory=dict)
 
+    age_context: Dict[str, Any] = Field(default_factory=lambda: {
+        "age": None,
+        "age_group": "未知",
+        "is_minor": False,
+        "guardian_required": False,
+        "romance_allowed": True,
+    })
+
+    relationships: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+    time: Dict[str, Any] = Field(default_factory=lambda: {
+        "current_date": "2026-01-01",
+        "age_years": None,
+        "age_months": None,
+        "days_elapsed": 0,
+        "turn_duration_days": 0,
+        "trainee_month": 1,
+        "next_evaluation_days": 28,
+        "last_turn_kind": "none",
+        "last_time_note": "角色创建",
+    })
+
+    school: Dict[str, Any] = Field(default_factory=lambda: {
+        "enrolled": False,
+        "school_type": "非在学",
+        "attendance_pressure": 0,
+        "exam_pressure": 0,
+        "homework_pressure": 0,
+        "classmate_relationship": 0,
+        "leave_risk": 0,
+    })
+
+    family: Dict[str, Any] = Field(default_factory=lambda: {
+        "emotional_support": 45,
+        "financial_support": 55,
+        "career_understanding": 35,
+        "control_level": 30,
+        "conflict_level": 20,
+        "distance_from_home": 30,
+        "guardian_trust_company": 50,
+        "last_contact_days": 7,
+    })
+
+    social_context: Dict[str, Any] = Field(default_factory=lambda: {
+        "nationality": "未填写",
+        "is_overseas": False,
+        "language_barrier": 20,
+        "cultural_adaptation": 55,
+        "visa_pressure": 0,
+        "family_distance": 30,
+        "overseas_market_link": "韩国本土",
+        "holiday_homesick_risk": 20,
+        "cultural_misread_risk": 10,
+    })
+
+    safety: Dict[str, Any] = Field(default_factory=lambda: {
+        "outing_permission": 50,
+        "dorm_security": 65,
+        "trusted_adults": ["经纪人", "舞蹈老师"],
+        "boundary_violation_risk": 10,
+        "bullying_risk": 12,
+        "harassment_risk": 8,
+        "report_history": [],
+        "independent_outing_allowed": True,
+        "curfew_violation_risk": 5,
+    })
+
+    hierarchy: Dict[str, Any] = Field(default_factory=lambda: {
+        "honorific_adaptation": 55,
+        "senior_relationship": 40,
+        "etiquette_pressure": 25,
+        "industry_reputation": 30,
+        "senior_support": 15,
+        "senior_pressure": 20,
+        "backstage_protocol_familiarity": 50,
+    })
+
+    profile_tags: List[str] = Field(default_factory=list)
+    initial_allocation_log: List[str] = Field(default_factory=list)
+    abilities: List[str] = Field(default_factory=list)
+    ability_cooldowns: Dict[str, int] = Field(default_factory=dict)
+    growth_history: List[str] = Field(default_factory=list)
+
     talents: Dict[str, int] = Field(default_factory=lambda: {
         "舞蹈天赋": 50,
         "声乐天赋": 50,
@@ -87,15 +170,15 @@ class GameState(BaseModel):
     })
 
     career: Dict[str, int] = Field(default_factory=lambda: {
-        "舞蹈实力": 35,
-        "声乐实力": 35,
-        "RAP能力": 25,
-        "舞台感染力": 35,
-        "综艺感": 30,
-        "语言能力": 40,
-        "形象指数": 45,
-        "演技潜力": 20,
-        "创作能力": 20,
+        "舞蹈实力": 5,
+        "声乐实力": 5,
+        "RAP能力": 3,
+        "舞台感染力": 4,
+        "综艺感": 3,
+        "语言能力": 5,
+        "形象指数": 5,
+        "演技潜力": 2,
+        "创作能力": 2,
         "制作人能力": 0,
     })
 
@@ -189,6 +272,36 @@ class GameState(BaseModel):
         "回归阶段": "无回归计划",
     })
 
+    period: Dict[str, Any] = Field(default_factory=lambda: {
+        "enabled": True,
+        "mode": "简化",
+        "cycle_day": 8,
+        "cycle_length": 28,
+        "phase": "稳定期",
+        "pain_level": 0,
+        "flow_pressure": 0,
+        "irregularity_risk": 5,
+        "has_supplies": True,
+        "told_manager": False,
+        "told_teammate": False,
+        "last_event_turn": -1,
+    })
+
+    inner_life: Dict[str, Any] = Field(default_factory=lambda: {
+        "被看见的渴望": 45,
+        "亲密需求": 35,
+        "比较敏感": 35,
+        "自我羞耻感": 25,
+        "秘密重量": 10,
+        "日记倾向": 35,
+        "身体自我意识": 30,
+        "心动值": 0,
+        "对未来的幻想": 45,
+    })
+    inner_secrets: List[Dict[str, Any]] = Field(default_factory=list)
+    crush_threads: List[Dict[str, Any]] = Field(default_factory=list)
+    emotional_outlets: List[str] = Field(default_factory=list)
+
     status_effects: Dict[str, int] = Field(default_factory=dict)
     locked_actions: List[str] = Field(default_factory=list)
     active_crises: List[ActiveCrisis] = Field(default_factory=list)
@@ -221,6 +334,19 @@ class GameState(BaseModel):
             "current_schedule": self.current_schedule,
             "next_milestone": self.next_milestone,
             "character": self.character,
+            "age_context": self.age_context,
+            "relationships": self.relationships,
+            "time": self.time,
+            "school": self.school,
+            "family": self.family,
+            "social_context": self.social_context,
+            "safety": self.safety,
+            "hierarchy": self.hierarchy,
+            "profile_tags": self.profile_tags,
+            "initial_allocation_log": self.initial_allocation_log,
+            "abilities": self.abilities,
+            "ability_cooldowns": self.ability_cooldowns,
+            "growth_history": self.growth_history[-20:],
             "talents": self.talents,
             "career": self.career,
             "body": self.body,
@@ -231,6 +357,11 @@ class GameState(BaseModel):
             "market": self.market,
             "risks": self.risks,
             "comeback": self.comeback,
+            "period": self.period,
+            "inner_life": self.inner_life,
+            "inner_secrets": self.inner_secrets[-10:],
+            "crush_threads": self.crush_threads[-5:],
+            "emotional_outlets": self.emotional_outlets,
             "status_effects": self.status_effects,
             "locked_actions": self.locked_actions,
             "active_crises": [c.model_dump() for c in self.active_crises],

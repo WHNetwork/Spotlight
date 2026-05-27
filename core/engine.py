@@ -10,9 +10,19 @@ from core.prompts import build_messages
 from core.rules import base_diff_for_action, apply_diff, sanitize_suggested_diff
 from core.storage import SaveStorage
 from core.systems import classify_turn, evaluate_all_systems
-from core.talents import generate_talents, apply_talent_modifiers
+from core.talents import apply_talent_modifiers
 from core.action_validator import validate_action, ActionBlockedError, ActionValidationResult
 from core.crisis import update_crises
+from core.initial_allocator import allocate_initial_state
+from core.abilities import update_abilities, ability_passive_diff
+from core.period_system import default_period_state, advance_period, evaluate_period_system
+from core.inner_life import default_inner_life, evaluate_inner_life
+from core.relationship_system import ensure_default_relationships, evaluate_relationship_system
+from core.time_system import default_time_context, compute_age_group, advance_time
+from core.social_context import default_social_context, evaluate_social_context
+from core.school_family import default_school_context, default_family_context, evaluate_school_family
+from core.safety_boundary import default_safety_context, evaluate_safety_boundary
+from core.hierarchy_system import default_hierarchy_context, evaluate_hierarchy_system
 
 
 class TurnEngine:
@@ -26,36 +36,38 @@ class TurnEngine:
         state = GameState()
         state.save_name = character.get("艺名") or character.get("本名") or "KPOP 女团存档"
         state.character = character
-        state.talents = generate_talents(character)
+        age = character.get("年龄")
+        try:
+            age_int = int(age) if age is not None and age != "" else None
+        except Exception:
+            age_int = None
+        state.age_context = compute_age_group(age_int)
+        state.time = default_time_context(age_int)
         state.current_stage = character.get("时间线", "练习生阶段")
         state.current_mainline = "初入公司"
         state.current_schedule = "第一天报到"
         state.next_milestone = "完成第一回合"
 
-        identity = character.get("身份", "")
-        if "运动员" in identity:
-            state.body["体力"] = 88
-            state.body["旧伤负担"] = 15
-            state.career["舞蹈实力"] += 5
-            state.mind["精神压力"] += 5
-            state.market["话题度"] += 8
-            state.flags.append("前运动员转型身份")
-        if "海外" in identity:
-            state.career["语言能力"] = 45
-            state.mind["孤独感"] += 10
-            state.flags.append("海外练习生身份")
-        if "顶流" in identity or "妹妹" in identity or "亲属" in identity:
-            state.market["话题度"] += 15
-            state.fans["黑粉活跃度"] += 8
-            state.flags.append("顶流亲属比较压力")
-        if "选秀" in identity:
-            state.fans["个人粉丝数"] += 3000
-            state.fans["黑粉活跃度"] += 5
-            state.flags.append("选秀淘汰者再挑战")
-        if "再出道" in identity or "小公司" in identity:
-            state.career["舞台感染力"] += 5
-            state.mind["职业倦怠"] += 8
-            state.flags.append("再出道压力")
+        allocate_initial_state(state, character)
+        state.social_context = default_social_context(character)
+        state.school = default_school_context(state.age_context, character)
+        state.family = default_family_context(state.age_context, character, state.social_context)
+        state.safety = default_safety_context(state.age_context)
+        state.hierarchy = default_hierarchy_context(state.social_context)
+        mode = str(character.get("生理周期系统", "简化") or "简化")
+        state.period = default_period_state(enabled=(mode != "关闭"), mode=mode)
+        state.inner_life = default_inner_life()
+        ensure_default_relationships(state)
+        for tag in state.profile_tags:
+            flag = f"身份标签：{tag}"
+            if flag not in state.flags:
+                state.flags.append(flag)
+        ability_events = update_abilities(state)
+        for ev in ability_events:
+            state.system_events.append(ev)
+            for flag in ev.new_flags:
+                if flag not in state.flags:
+                    state.flags.append(flag)
 
         state.current_choices = [
             Choice(id="A", text="先观察公司和练习室氛围。"),
@@ -74,11 +86,28 @@ class TurnEngine:
         actual_model = self.config.model_for_tier(route_info.model_tier)
         route_info.actual_model = "mock" if self.use_mock else actual_model
 
+        time_events, time_diff, turn_duration_days = advance_time(state, route_info, action)
+        advance_period(state, days=turn_duration_days)
+
         base_diff = base_diff_for_action(action, state)
         base_diff = apply_talent_modifiers(state, action, base_diff)
+        for key, value in ability_passive_diff(state, action).items():
+            base_diff[key] = base_diff.get(key, 0) + value
 
         system_events, system_diff = evaluate_all_systems(state, action)
-        system_events = validation.system_events + system_events
+        period_events, period_diff = evaluate_period_system(state, action)
+        inner_events, inner_diff = evaluate_inner_life(state, action)
+        relationship_events, relationship_diff = evaluate_relationship_system(state, action)
+        school_events, school_diff = evaluate_school_family(state, action)
+        social_events, social_diff = evaluate_social_context(state, action)
+        safety_events, safety_diff = evaluate_safety_boundary(state, action)
+        hierarchy_events, hierarchy_diff = evaluate_hierarchy_system(state, action)
+
+        for extra_diff in [time_diff, period_diff, inner_diff, relationship_diff, school_diff, social_diff, safety_diff, hierarchy_diff]:
+            for key, value in extra_diff.items():
+                system_diff[key] = system_diff.get(key, 0) + value
+
+        system_events = validation.system_events + time_events + system_events + period_events + inner_events + relationship_events + school_events + social_events + safety_events + hierarchy_events
 
         crisis_events, crisis_diff = update_crises(state, action, system_events)
         system_events.extend(crisis_events)
@@ -101,6 +130,14 @@ class TurnEngine:
 
         max_delta = 12 if route_info.turn_kind in {"crisis", "mainline"} else 8
         applied = apply_diff(state, merged_diff, max_abs_delta=max_delta)
+
+        # Record growth sources.
+        for key, (old, new) in applied.items():
+            if new != old:
+                state.growth_history.append(f"Turn {state.turn + 1}: {key} {old}→{new}，来源行动：{action}")
+
+        ability_events = update_abilities(state)
+        system_events.extend(ability_events)
 
         for event in system_events:
             if event.code not in [e.code for e in state.system_events]:

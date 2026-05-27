@@ -4,7 +4,10 @@ import json
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-import keyring
+try:
+    import keyring
+except Exception:  # keyring may be unavailable in minimal test environments
+    keyring = None
 
 APP_NAME = "kpop_idol_simulator"
 CONFIG_DIR = Path.home() / ".kpop_idol_simulator"
@@ -66,6 +69,8 @@ class AppConfig:
         if env_key:
             return env_key
         try:
+            if keyring is None:
+                return ""
             return keyring.get_password(APP_NAME, "DEEPSEEK_API_KEY") or ""
         except Exception:
             return ""
@@ -75,6 +80,8 @@ class AppConfig:
         if not api_key:
             return
         try:
+            if keyring is None:
+                raise RuntimeError("keyring unavailable")
             keyring.set_password(APP_NAME, "DEEPSEEK_API_KEY", api_key)
         except Exception:
             fallback = CONFIG_DIR / ".api_key"

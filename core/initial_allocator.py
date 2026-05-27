@@ -1,0 +1,233 @@
+from __future__ import annotations
+
+from typing import Any, Dict, List, Tuple
+
+from core.models import GameState
+from core.talents import generate_talents
+
+
+CAREER_KEYS = ["舞蹈实力", "声乐实力", "RAP能力", "舞台感染力", "综艺感", "语言能力", "演技潜力", "创作能力", "制作人能力"]
+
+
+def clamp(v: int, low: int = 0, high: int = 100) -> int:
+    return max(low, min(high, int(v)))
+
+
+def add(d: Dict[str, int], key: str, delta: int, log: List[str], reason: str, cap: int | None = None) -> None:
+    old = d.get(key, 0)
+    new = old + delta
+    if cap is not None:
+        new = min(new, cap)
+    d[key] = clamp(new)
+    if delta != 0:
+        log.append(f"{key}: {old} → {d[key]}（{reason}）")
+
+
+def parse_profile_tags(character: Dict[str, Any]) -> List[str]:
+    tags: List[str] = []
+    identity = str(character.get("身份", ""))
+    source_tags = character.get("出身来源标签", []) or []
+    speciality = str(character.get("特长", ""))
+    weakness = str(character.get("弱项", ""))
+    exp = str(character.get("练习生经历", ""))
+    family = str(character.get("家庭状况", ""))
+
+    if "运动员" in identity or any("运动员" in str(t) for t in source_tags):
+        tags.append("前运动员")
+    if "海外" in identity or any("海外" in str(t) for t in source_tags):
+        tags.append("海外练习生")
+    if "顶流" in identity or "妹妹" in identity or "亲属" in identity:
+        tags.append("顶流亲属")
+    if "选秀" in identity or any("选秀" in str(t) for t in source_tags):
+        tags.append("选秀淘汰者")
+    if "再出道" in identity or "小公司" in identity:
+        tags.append("再出道")
+    if "富二代" in identity or "优渥" in identity:
+        tags.append("优渥家庭")
+    if "网红" in ",".join(map(str, source_tags)):
+        tags.append("网红出身")
+    if "童星" in ",".join(map(str, source_tags)) or "儿童模特" in ",".join(map(str, source_tags)):
+        tags.append("童星/模特")
+    if "舞" in speciality or "舞" in exp:
+        tags.append("舞蹈基础")
+    if "声乐" in speciality or "唱" in speciality or "声乐" in exp:
+        tags.append("声乐基础")
+    if "rap" in speciality.lower() or "说唱" in speciality:
+        tags.append("RAP基础")
+    if "演技" in speciality or "表演" in speciality:
+        tags.append("表演基础")
+    if "作词" in speciality or "作曲" in speciality or "创作" in speciality:
+        tags.append("创作兴趣")
+    if "韩语" in weakness or "语言" in weakness:
+        tags.append("语言短板")
+    if "声乐" in weakness or "唱" in weakness:
+        tags.append("声乐短板")
+    if "舞" in weakness:
+        tags.append("舞蹈短板")
+    if family:
+        tags.append("家庭背景已设定")
+
+    # 去重保持顺序
+    out = []
+    for t in tags:
+        if t not in out:
+            out.append(t)
+    return out
+
+
+def allocate_initial_state(state: GameState, character: Dict[str, Any]) -> None:
+    """Apply initial stats for a new character.
+
+    Career stats are intentionally low for trainee-stage games.
+    Talents may be high; current abilities are not.
+    """
+    log: List[str] = []
+    profile_tags = parse_profile_tags(character)
+    timeline = str(character.get("时间线", "练习生阶段"))
+    identity = str(character.get("身份", ""))
+
+    state.profile_tags = profile_tags
+    state.initial_allocation_log = log
+
+    state.talents = generate_talents(character)
+
+    # Low career defaults.
+    if "练习生" in timeline:
+        state.career = {
+            "舞蹈实力": 5,
+            "声乐实力": 5,
+            "RAP能力": 3,
+            "舞台感染力": 4,
+            "综艺感": 3,
+            "语言能力": 5,
+            "演技潜力": 2,
+            "创作能力": 2,
+            "制作人能力": 0,
+        }
+        log.append("练习生阶段：职业属性采用低值开局，多数为 2—5。")
+        career_cap = 15
+    elif "出道前" in timeline:
+        state.career = {
+            "舞蹈实力": 24,
+            "声乐实力": 24,
+            "RAP能力": 18,
+            "舞台感染力": 22,
+            "综艺感": 16,
+            "语言能力": 22,
+            "演技潜力": 10,
+            "创作能力": 8,
+            "制作人能力": 0,
+        }
+        log.append("出道前一天：职业属性进入预备出道水平。")
+        career_cap = 45
+    elif "回归" in timeline:
+        state.career = {
+            "舞蹈实力": 45,
+            "声乐实力": 42,
+            "RAP能力": 30,
+            "舞台感染力": 45,
+            "综艺感": 32,
+            "语言能力": 35,
+            "演技潜力": 18,
+            "创作能力": 15,
+            "制作人能力": 0,
+        }
+        log.append("回归瓶颈期：职业属性按已出道成员初始化。")
+        career_cap = 70
+    else:
+        state.career = {
+            "舞蹈实力": 55,
+            "声乐实力": 50,
+            "RAP能力": 35,
+            "舞台感染力": 55,
+            "综艺感": 40,
+            "语言能力": 45,
+            "演技潜力": 25,
+            "创作能力": 20,
+            "制作人能力": 5,
+        }
+        log.append("续约前一年：职业属性按成熟爱豆初始化。")
+        career_cap = 80
+
+    # Tag-based low boosts.
+    if "舞蹈基础" in profile_tags:
+        add(state.career, "舞蹈实力", 5, log, "特长/经历包含舞蹈基础", min(career_cap, 15 if "练习生" in timeline else career_cap))
+        add(state.career, "舞台感染力", 2, log, "舞蹈基础带来舞台感", min(career_cap, 12 if "练习生" in timeline else career_cap))
+    if "声乐基础" in profile_tags:
+        add(state.career, "声乐实力", 5, log, "特长/经历包含声乐基础", min(career_cap, 15 if "练习生" in timeline else career_cap))
+    if "RAP基础" in profile_tags:
+        add(state.career, "RAP能力", 5, log, "特长/经历包含 RAP", min(career_cap, 15 if "练习生" in timeline else career_cap))
+    if "表演基础" in profile_tags:
+        add(state.career, "演技潜力", 5, log, "特长包含表演/演技", min(career_cap, 12 if "练习生" in timeline else career_cap))
+    if "创作兴趣" in profile_tags:
+        add(state.career, "创作能力", 4, log, "有创作兴趣或基础", min(career_cap, 12 if "练习生" in timeline else career_cap))
+
+    if "前运动员" in profile_tags:
+        add(state.career, "舞蹈实力", 3, log, "前运动员的身体控制迁移到舞蹈学习", min(career_cap, 14 if "练习生" in timeline else career_cap))
+        add(state.career, "舞台感染力", 2, log, "竞技经历带来舞台承压经验", min(career_cap, 12 if "练习生" in timeline else career_cap))
+        state.body["体力"] = 86
+        state.body["旧伤负担"] = 18
+        state.body["伤病风险"] = 20
+        log.append("前运动员：体力较高，但旧伤负担和伤病风险同步上升。")
+
+    if "选秀淘汰者" in profile_tags:
+        add(state.career, "舞台感染力", 5, log, "选秀经历带来镜头与舞台经验", 20 if "练习生" in timeline else career_cap)
+        add(state.career, "综艺感", 3, log, "选秀经历带来镜头表达经验", 18 if "练习生" in timeline else career_cap)
+        state.fans["个人粉丝数"] += 3000
+        state.fans["黑粉活跃度"] += 5
+        state.mind["精神压力"] += 8
+        log.append("选秀淘汰者：自带少量粉丝、黑粉与失败记忆压力。")
+
+    if "再出道" in profile_tags:
+        add(state.career, "舞台感染力", 6, log, "再出道经历带来真实舞台经验", 20 if "练习生" in timeline else career_cap)
+        state.mind["职业倦怠"] += 12
+        state.mind["精神压力"] += 6
+        log.append("再出道：舞台经验更强，但职业倦怠和压力更高。")
+
+    if "海外练习生" in profile_tags:
+        add(state.career, "语言能力", 4, log, "海外背景带来外语/跨文化优势", min(career_cap, 14 if "练习生" in timeline else career_cap))
+        state.mind["孤独感"] += 10
+        log.append("海外练习生：语言/海外潜力增加，同时孤独感上升。")
+
+    if "顶流亲属" in profile_tags:
+        state.market["话题度"] += 15
+        state.fans["黑粉活跃度"] += 8
+        state.mind["精神压力"] += 8
+        log.append("顶流亲属：初始话题高，但比较压力和黑粉更高。")
+
+    if "优渥家庭" in profile_tags:
+        add(state.career, "声乐实力", 2, log, "优渥家庭可能带来早期课程资源", min(career_cap, 12 if "练习生" in timeline else career_cap))
+        add(state.career, "语言能力", 2, log, "优渥教育资源带来语言基础", min(career_cap, 12 if "练习生" in timeline else career_cap))
+        state.fans["黑粉活跃度"] += 3
+        log.append("优渥家庭：课程资源略高，但关系户争议风险存在。")
+
+    # Weakness penalties.
+    if "舞蹈短板" in profile_tags:
+        add(state.career, "舞蹈实力", -2, log, "弱项包含舞蹈", career_cap)
+    if "声乐短板" in profile_tags:
+        add(state.career, "声乐实力", -2, log, "弱项包含声乐", career_cap)
+    if "语言短板" in profile_tags:
+        add(state.career, "语言能力", -2, log, "弱项包含语言", career_cap)
+
+    # Always force producer ability low at start.
+    if "练习生" in timeline:
+        state.career["制作人能力"] = 0
+    elif "出道前" in timeline or "回归" in timeline:
+        state.career["制作人能力"] = min(state.career.get("制作人能力", 0), 5)
+
+    # Career caps for trainee.
+    if "练习生" in timeline:
+        for key in CAREER_KEYS:
+            cap = 15
+            if "选秀淘汰者" in profile_tags or "再出道" in profile_tags:
+                cap = 20 if key in {"舞台感染力", "舞蹈实力", "声乐实力", "综艺感"} else 15
+            if key == "制作人能力":
+                cap = 0
+            state.career[key] = clamp(state.career[key], 0, cap)
+
+        # Market/fandom mostly near zero unless special background.
+        state.market["品牌价值"] = min(state.market.get("品牌价值", 0), 5)
+        state.market["韩国本土影响力"] = min(state.market.get("韩国本土影响力", 0), 5)
+        state.fans["团体粉丝数"] = 0
+
+    log.append("制作人能力开局不因兴趣上升，必须通过创作能力与真实项目逐步解锁。")
