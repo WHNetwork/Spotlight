@@ -19,10 +19,21 @@ def icon(name: str):
     return getattr(ft.Icons, name, None)
 
 
+def asset(path: str) -> str:
+    return path.replace("\\", "/")
+
+
+def icon_image(name: str, size: int = 24, opacity: float = 1.0) -> ft.Image:
+    return ft.Image(src=asset(f"icons/{name}.png"), width=size, height=size, fit=ft.ImageFit.CONTAIN, opacity=opacity)
+
+def glass_color(opacity: float = 0.72) -> str:
+    return ft.Colors.with_opacity(opacity, ft.Colors.WHITE)
+
+
 class KpopApp:
     def __init__(self, page: ft.Page) -> None:
         self.page = page
-        self.page.title = "KPOP 女团爱豆模拟器"
+        self.page.title = "星光练习室"
         self.page.window_width = 1320
         self.page.window_height = 860
         self.page.theme_mode = ft.ThemeMode.LIGHT
@@ -30,7 +41,6 @@ class KpopApp:
         self.storage = SaveStorage()
         self.save_id: Optional[int] = None
         self.state: Optional[GameState] = None
-        self.use_mock = False
         self.story_view = ft.Column(expand=True, scroll=ft.ScrollMode.AUTO)
         self.left_panel = ft.Column(width=300, scroll=ft.ScrollMode.AUTO)
         self.right_panel = ft.Column(width=340, scroll=ft.ScrollMode.AUTO)
@@ -45,21 +55,136 @@ class KpopApp:
 
     def show_home(self) -> None:
         self.clear()
+        self.page.padding = 0
+        self.page.bgcolor = ft.Colors.WHITE
         latest_id = self.storage.latest_save_id()
-        self.page.add(ft.Container(
+
+        def top_icon(name: str, tooltip: str, handler):
+            return ft.Container(
+                content=icon_image(name, 28),
+                width=54,
+                height=54,
+                bgcolor=glass_color(0.64),
+                border=ft.border.all(1, ft.Colors.with_opacity(0.55, ft.Colors.WHITE)),
+                border_radius=18,
+                alignment=ft.alignment.center,
+                tooltip=tooltip,
+                on_click=handler,
+                ink=True,
+                shadow=ft.BoxShadow(blur_radius=22, spread_radius=0, color=ft.Colors.with_opacity(0.12, ft.Colors.BLUE_GREY), offset=ft.Offset(0, 8)),
+            )
+
+        def menu_button(title: str, subtitle: str, icon_name: str, english: str, handler, disabled: bool = False):
+            bg = ft.Colors.with_opacity(0.78 if not disabled else 0.42, ft.Colors.WHITE)
+            fg = "#56617A" if not disabled else "#9AA0B5"
+            return ft.Container(
+                width=430,
+                height=76,
+                padding=ft.padding.symmetric(horizontal=22, vertical=10),
+                border_radius=38,
+                bgcolor=bg,
+                border=ft.border.all(1, ft.Colors.with_opacity(0.82, "#FFFFFF")),
+                shadow=ft.BoxShadow(blur_radius=28, spread_radius=0, color=ft.Colors.with_opacity(0.12, "#536B89"), offset=ft.Offset(0, 10)),
+                opacity=0.62 if disabled else 1,
+                on_click=None if disabled else handler,
+                ink=not disabled,
+                content=ft.Row([
+                    ft.Container(icon_image(icon_name, 36, 0.95 if not disabled else 0.4), width=48, height=48, border_radius=24, bgcolor=ft.Colors.with_opacity(0.52, "#F7ECEE"), alignment=ft.alignment.center),
+                    ft.Column([
+                        ft.Text(title, size=18, weight=ft.FontWeight.W_600, color=fg),
+                        ft.Text(subtitle, size=11, color=ft.Colors.with_opacity(0.70, fg)),
+                    ], spacing=2, expand=True),
+                    ft.Text(english, size=10, color=ft.Colors.with_opacity(0.48, fg), italic=True),
+                ], alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            )
+
+        profile_card = ft.Container(
+            width=320,
+            height=126,
+            padding=18,
+            border_radius=24,
+            bgcolor=glass_color(0.60),
+            border=ft.border.all(1, ft.Colors.with_opacity(0.72, ft.Colors.WHITE)),
+            shadow=ft.BoxShadow(blur_radius=26, color=ft.Colors.with_opacity(0.10, "#536B89"), offset=ft.Offset(0, 10)),
+            content=ft.Row([
+                ft.Container(icon_image("app_logo", 72), width=78, height=78, border_radius=39, bgcolor=ft.Colors.with_opacity(0.55, "#F7ECEE"), alignment=ft.alignment.center),
+                ft.Column([
+                    ft.Text("星光练习室", size=18, weight=ft.FontWeight.W_700, color="#56617A"),
+                    ft.Text("Starlight Practice Room", size=11, italic=True, color="#8C88A6"),
+                    ft.Container(height=6),
+                    ft.Text("最新存档可读取" if latest_id is not None else "尚未开始旅程", size=12, color="#7D8CA0"),
+                ], spacing=1),
+            ], spacing=12),
+        )
+
+        news_card = ft.Container(
+            width=410,
+            padding=22,
+            border_radius=24,
+            bgcolor=glass_color(0.56),
+            border=ft.border.all(1, ft.Colors.with_opacity(0.72, ft.Colors.WHITE)),
+            shadow=ft.BoxShadow(blur_radius=24, color=ft.Colors.with_opacity(0.10, "#536B89"), offset=ft.Offset(0, 10)),
             content=ft.Column([
-                ft.Text("🎤 KPOP 女团爱豆模拟器", size=34, weight=ft.FontWeight.BOLD),
-                ft.Text("Phase 2.1 · 行动合法性 + 阶段门控 + 危机生命周期 + 天赋系统", size=16),
-                ft.Divider(),
-                ft.Text("当前规则模式：模块化 Markdown + Python GameState + ActionValidator + ActiveCrisis + diff 校验。", size=14, color=ft.Colors.BLUE_GREY),
-                ft.Row([
-                    ft.ElevatedButton("新建角色", icon=icon("ADD"), on_click=lambda e: self.show_character_create()),
-                    ft.ElevatedButton("读取最新存档", icon=icon("FOLDER_OPEN"), on_click=lambda e: self.load_latest(), disabled=latest_id is None),
-                    ft.ElevatedButton("存档列表", icon=icon("LIST"), on_click=lambda e: self.show_save_list()),
-                    ft.ElevatedButton("设置 DeepSeek", icon=icon("SETTINGS"), on_click=lambda e: self.show_settings()),
-                ], spacing=12),
-            ], spacing=16, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-            alignment=ft.Alignment(0, 0), expand=True, padding=40))
+                ft.Row([icon_image("diary", 22), ft.Text("星光日报", size=16, weight=ft.FontWeight.W_700, color="#6A6684")], spacing=8),
+                ft.Text("今日行程更新", size=13, color="#7D8CA0"),
+                ft.Text("· 个人档案：开启角色创建", size=13, color="#7D8CA0"),
+                ft.Text("· 存档：支持 DeepSeek 正式回合", size=13, color="#7D8CA0"),
+                ft.Text("· UI：主页视觉重制中", size=13, color="#7D8CA0"),
+            ], spacing=6),
+        )
+
+        title_block = ft.Column([
+            ft.Text("✦", size=36, color="#B7A6D8", text_align=ft.TextAlign.CENTER),
+            ft.Text("星光练习室", size=64, weight=ft.FontWeight.W_700, color="#8E88B8", text_align=ft.TextAlign.CENTER),
+            ft.Text("Starlight Practice Room", size=18, italic=True, color="#9A96B7", text_align=ft.TextAlign.CENTER),
+            ft.Text("少女偶像人生模拟器", size=16, color="#7D8CA0", text_align=ft.TextAlign.CENTER),
+        ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+
+        menu = ft.Column([
+            menu_button("继续旅程", "读取最近一次存档，回到练习室", "app_logo", "CONTINUE", lambda e: self.load_latest(), disabled=latest_id is None),
+            menu_button("新的人生", "创建角色，从第一天报到开始", "new_character", "NEW GAME", lambda e: self.show_character_create()),
+            menu_button("读取存档", "查看所有保存的故事线", "save_archive", "LOAD GAME", lambda e: self.show_save_list()),
+            menu_button("系统设置", "配置 DeepSeek 模型与 API", "settings", "SETTINGS", lambda e: self.show_settings()),
+        ], spacing=22, horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+
+        home = ft.Stack([
+            ft.Image(src=asset("backgrounds/home_bg.png"), fit=ft.ImageFit.COVER, expand=True),
+            ft.Container(expand=True, bgcolor=ft.Colors.with_opacity(0.16, ft.Colors.WHITE)),
+            ft.Container(
+                expand=True,
+                padding=ft.padding.only(left=42, right=42, top=30, bottom=34),
+                content=ft.Column([
+                    ft.Row([
+                        profile_card,
+                        ft.Container(expand=True),
+                        top_icon("contract", "合同/说明", lambda e: self.snack("主页 UI 阶段：合同页稍后设计。")),
+                        top_icon("diary", "星光日记", lambda e: self.snack("主页 UI 阶段：日记页稍后设计。")),
+                        top_icon("schedule", "行程", lambda e: self.snack("主页 UI 阶段：行程页稍后设计。")),
+                        top_icon("settings", "设置", lambda e: self.show_settings()),
+                    ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
+                    ft.Container(expand=True),
+                    ft.Row([
+                        ft.Container(width=430),
+                        ft.Column([title_block, ft.Container(height=34), menu], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
+                        ft.Container(width=430),
+                    ], alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.Container(expand=True),
+                    ft.Row([
+                        news_card,
+                        ft.Container(expand=True),
+                        ft.Container(
+                            width=470,
+                            padding=ft.padding.symmetric(horizontal=20, vertical=14),
+                            border_radius=20,
+                            bgcolor=ft.Colors.with_opacity(0.36, ft.Colors.WHITE),
+                            content=ft.Text("“每一束星光，都始于练习室的微光。”", size=24, color="#8E88B8", italic=True, text_align=ft.TextAlign.RIGHT),
+                        ),
+                    ], vertical_alignment=ft.CrossAxisAlignment.END),
+                ], expand=True),
+            ),
+        ], expand=True)
+
+        self.page.add(home)
         self.page.update()
 
     def show_settings(self) -> None:
@@ -70,14 +195,12 @@ class KpopApp:
         flash_model = ft.TextField(label="Flash Model", value=self.config.flash_model, width=660)
         pro_model = ft.TextField(label="Pro Model", value=self.config.pro_model, width=660)
         custom_model = ft.TextField(label="Custom Model", value=self.config.custom_model, width=660)
-        mock_switch = ft.Switch(label="使用 Mock 模式，不调用 API", value=self.use_mock)
         status = ft.Text("", color=ft.Colors.GREEN)
 
         def save_settings(e):
             self.config.save(base_url.value or "https://api.deepseek.com", model_policy.value or "auto", flash_model.value or "deepseek-v4-flash", pro_model.value or "deepseek-v4-pro", custom_model.value or "deepseek-chat")
             if api_key.value:
                 self.config.set_api_key(api_key.value)
-            self.use_mock = bool(mock_switch.value)
             status.color = ft.Colors.GREEN
             status.value = "设置已保存。"
             self.page.update()
@@ -100,8 +223,8 @@ class KpopApp:
 
         self.page.add(ft.Container(content=ft.Column([
             ft.Text("设置", size=28, weight=ft.FontWeight.BOLD),
-            ft.Text("auto：普通回合用 Flash，重大剧情/危机/公关/续约/恋爱曝光用 Pro。"),
-            api_key, base_url, model_policy, flash_model, pro_model, custom_model, mock_switch,
+            ft.Text("auto：普通回合用 Flash，重大剧情/危机/公关/续约/恋爱曝光用 Pro。正式回合必须调用 DeepSeek。"),
+            api_key, base_url, model_policy, flash_model, pro_model, custom_model,
             ft.Row([
                 ft.ElevatedButton("保存设置", icon=icon("SAVE"), on_click=save_settings),
                 ft.ElevatedButton("测试 Flash", on_click=lambda e: test_model(e, "flash")),
@@ -140,7 +263,7 @@ class KpopApp:
                 status.value = "提示：\n" + "\n".join(f"• {w}" for w in normalized.warnings)
                 self.page.update()
 
-            engine = TurnEngine(self.storage, self.config, use_mock=True)
+            engine = TurnEngine(self.storage, self.config)
             state = engine.create_initial_state(normalized.data)
             self.save_id = self.storage.create_save(state)
             self.state = state
@@ -192,7 +315,7 @@ class KpopApp:
         self.story_view.controls.append(ft.Text("角色已创建。你可以从下方选择第一步行动。" if initial or self.state.turn == 0 else self.state.last_public_summary or "存档已载入。", size=16))
         self.refresh_panels()
         self.refresh_choices()
-        top_bar = ft.Row([ft.Text("🎤 KPOP 女团爱豆模拟器", size=22, weight=ft.FontWeight.BOLD), ft.Container(expand=True), ft.TextButton("设置", on_click=lambda e: self.show_settings()), ft.TextButton("存档", on_click=lambda e: self.show_save_list()), ft.TextButton("首页", on_click=lambda e: self.show_home())])
+        top_bar = ft.Row([ft.Row([icon_image("app_logo", 30), ft.Text("星光练习室", size=22, weight=ft.FontWeight.BOLD, color="#56617A")], spacing=8), ft.Container(expand=True), ft.TextButton("设置", on_click=lambda e: self.show_settings()), ft.TextButton("存档", on_click=lambda e: self.show_save_list()), ft.TextButton("首页", on_click=lambda e: self.show_home())])
         main_layout = ft.Column([top_bar, ft.Divider(), ft.Row([ft.Container(self.left_panel, padding=12, bgcolor=ft.Colors.GREY_50, border_radius=10), ft.Container(self.story_view, expand=True, padding=12, bgcolor=ft.Colors.WHITE, border_radius=10), ft.Container(self.right_panel, padding=12, bgcolor=ft.Colors.GREY_50, border_radius=10)], expand=True, vertical_alignment=ft.CrossAxisAlignment.START), ft.Divider(), self.choice_row], expand=True)
         self.page.add(ft.Container(content=main_layout, padding=12, expand=True))
         self.page.update()
@@ -229,11 +352,11 @@ class KpopApp:
             return
         self.story_view.controls.append(ft.Divider())
         self.story_view.controls.append(ft.Text(f"你的选择：{action}", weight=ft.FontWeight.BOLD))
-        self.story_view.controls.append(ft.Text(f"调用模式：{'Mock 本地测试模式' if self.use_mock else f'DeepSeek API 模式，策略：{self.config.model_policy}'}", color=ft.Colors.BLUE, weight=ft.FontWeight.BOLD))
+        self.story_view.controls.append(ft.Text(f"调用模式：DeepSeek API，策略：{self.config.model_policy}", color=ft.Colors.BLUE, weight=ft.FontWeight.BOLD))
         self.story_view.controls.append(ft.Text("正在生成下一回合……"))
         self.page.update()
         try:
-            engine = TurnEngine(self.storage, self.config, use_mock=self.use_mock)
+            engine = TurnEngine(self.storage, self.config)
             state, response, applied, route_info, system_events, validation = engine.run_turn(self.save_id, self.state, action)
             self.state = state
             if validation.normalized_action != validation.original_action:
@@ -241,7 +364,7 @@ class KpopApp:
                 for w in validation.warnings:
                     self.story_view.controls.append(ft.Text(f"• {w}", color=ft.Colors.ORANGE))
                 self.story_view.controls.append(ft.Text(f"实际执行：{validation.normalized_action}", color=ft.Colors.ORANGE))
-            self.story_view.controls.append(ft.Text(f"✅ 本回合已调用 {'MockProvider' if self.use_mock else 'DeepSeek API'}。实际模型：{route_info.actual_model}；回合类型：{route_info.turn_kind}。", color=ft.Colors.GREEN))
+            self.story_view.controls.append(ft.Text(f"✅ 本回合已调用 DeepSeek API。实际模型：{route_info.actual_model}；回合类型：{route_info.turn_kind}。", color=ft.Colors.GREEN))
             self.story_view.controls.append(ft.Text(f"路由原因：{route_info.reason}", color=ft.Colors.BLUE_GREY))
             if system_events:
                 self.story_view.controls.append(ft.Text("Python 系统事件", weight=ft.FontWeight.BOLD))
@@ -289,4 +412,4 @@ def main(page: ft.Page) -> None:
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.app(target=main, assets_dir="assets")

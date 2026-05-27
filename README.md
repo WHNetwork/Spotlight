@@ -1,69 +1,49 @@
-# KPOP 女团爱豆模拟器 · Phase 2.5.3 Age Gap + Stress Test
+# KPOP 女团爱豆模拟器 · Phase 2.5.5 No Mock
 
-这版在 Phase 2.5.2 基础上更新 CP 年龄差规则，并新增全方位压力测试。
+这版移除了 Mock 引擎。正式回合只通过 DeepSeek API 生成剧情。
 
-## 更新规则
+## 核心变化
 
-CP / 营业关系资格只适用于 peer entertainment relationship：
+- 删除 `MockProvider`
+- 删除 `TurnEngine(use_mock=...)`
+- 删除设置页的“使用 Mock 模式”
+- 删除界面中的 Mock 调用提示
+- 角色创建仍然是本地逻辑，不调用大模型
+- 回合推进必须调用 DeepSeek
+- 如果 DeepSeek API 调用失败，状态不会推进、存档不会写入、时间不会被错误消耗
 
-- 同期练习生 / 队友 / 同团成员 / 爱豆
-- 非工作人员、非老师、非经纪人、非 PD、非粉丝
-- 练习生阶段：玩家与对象年龄差不得超过 3 岁
-- 成为爱豆后：玩家与对象年龄差不得超过 5 岁
-- 未成年与成年人之间不能进入 CP / 恋爱确认 / 成人化亲密
-- 工作人员即使同龄，也不进入 CP。可以出现玩家心动，但必须进入职业边界风险路线
-
-## 新增压力测试
-
-```bash
-python test_phase2_5_3_stress.py
-```
-
-压力测试覆盖：
-
-- CP 年龄差：练习生 ≤3 岁，爱豆 ≤5 岁
-- 未成年与成年对象阻断
-- 工作人员关系分层
-- 同龄工作人员高风险心动路线
-- 经纪人/老师/PD 高权力差阻止
-- 未成年深夜外出阻止
-- 陌生邀约阻止
-- 学校/家庭/海外/前后辈/安全/生理期/少女心事联动
-- 行动合法性闸门
-- 危机生命周期
-- Mock 引擎连续多回合压力测试
-- 异常输入、极端数值和旧存档字段回填
-- UI 关系摘要不显示错误 CP 字段
-
-
-## Phase 2.5.4 全功能压力测试
-
-新增：
+## 运行
 
 ```bash
-python test_phase2_5_4_full_system_stress.py
+conda activate kpop_sim
+python app.py
 ```
 
-该脚本不是只测 CP 或关系系统，而是覆盖当前模拟器已经实现的主要功能项：
+## 设置 DeepSeek
 
-- 项目静态完整性、Python 语法、数据模块存在性
-- 角色创建校验、初始属性分配、天赋、能力解锁
-- DeepSeek/Mock 输出解析、prompt 构造、模型路由
-- 存档数据库创建、读取、回合记录
-- 行动闸门：阶段门控、健康闸门、安全闸门、工作人员边界、未成年边界
-- 基础 diff、模型 diff 清洗、属性应用与 clamp
-- 时间、年龄、月末考核、快进回合
-- 生理周期、少女心事、关系系统、工作人员关系、CP 年龄差
-- 学校、家庭、国籍文化、前后辈礼仪、安全边界
-- 健康、资源、公关、粉圈、团队镜头、回归、延迟后果
-- 危机生命周期：公关、健康、私生安全、队内不和
-- Mock 引擎连续多回合运行与 blocked action 不推进
-- 旧存档字段回填、关系 UI 摘要检查、随机行动矩阵 smoke test
-
-运行后会生成：
+在设置页填写：
 
 ```text
-stress_report.json
+DeepSeek API Key
+Base URL: https://api.deepseek.com
+模型策略：auto / flash / pro / custom
+Flash Model
+Pro Model
+Custom Model
 ```
 
-里面记录每个测试项的通过状态、覆盖分类和备注。
+## 测试
+
+离线全系统测试：
+
+```bash
+python test_phase2_5_5_no_mock_offline.py
+```
+
+可选 DeepSeek API 集成测试：
+
+```bash
+python test_deepseek_integration_optional.py
+```
+
+如果没有 API Key，集成测试会跳过真实调用。
