@@ -7,7 +7,7 @@ from core.models import GameState, SystemEvent
 def default_period_state(enabled: bool = True, mode: str = "简化") -> Dict[str, Any]:
     return {
         "enabled": enabled,
-        "mode": mode,  # 关闭 / 简化 / 开启
+        "mode": mode,  # 关闭 / 简化 / 极致
         "cycle_day": 8,
         "cycle_length": 28,
         "phase": "稳定期",
@@ -91,6 +91,7 @@ def evaluate_period_system(state: GameState, action: str) -> Tuple[List[SystemEv
         return events, diff
 
     text = action.lower()
+    detail_mode = str(p.get("mode", "简化")) in {"极致", "细致", "开启"}
     phase = str(p.get("phase", "稳定期"))
     pain = int(p.get("pain_level", 0))
     flow = int(p.get("flow_pressure", 0))
@@ -190,7 +191,7 @@ def evaluate_period_system(state: GameState, action: str) -> Tuple[List[SystemEv
             ["生理期高强度训练风险"],
         ))
 
-    if pale_clothes and flow >= 30:
+    if detail_mode and pale_clothes and flow >= 30:
         _add(diff, "心理状态.精神压力", 3)
         _add(diff, "心理状态.自我认同", -1)
         if hasattr(state, "inner_life"):
@@ -209,7 +210,7 @@ def evaluate_period_system(state: GameState, action: str) -> Tuple[List[SystemEv
     else:
         p["irregularity_risk"] = max(0, int(p.get("irregularity_risk", 5)) - 1)
 
-    if p["irregularity_risk"] > 60:
+    if detail_mode and p["irregularity_risk"] > 60:
         events.append(_event(
             "period_irregularity_warning",
             "周期不规律风险上升",

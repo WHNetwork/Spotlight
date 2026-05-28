@@ -37,8 +37,14 @@ def build_messages(
     route_info: RouteInfo,
     validation: ActionValidationResult,
 ) -> List[Dict[str, str]]:
+    ch = state.character if isinstance(state.character, dict) else {}
     user_payload = {
         "instruction": "请根据当前 GameState、玩家行动、行动合法性检查、Python 规则事件和 diff 生成下一回合。只返回 JSON。",
+        "personality_guidance": {
+            "mbti": ch.get("MBTI"),
+            "mbti_profile": ch.get("MBTI人格倾向"),
+            "rule": "MBTI只作为角色反应倾向、关系节奏、压力表达和日记语气的稳定器；不要写成人格测试说明，不要让角色刻板化。"
+        },
         "prompt_mode": "phase2_1_action_gated_systems",
         "loaded_modules": list_prompt_modules(),
         "route_info": route_info.model_dump(),

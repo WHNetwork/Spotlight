@@ -670,9 +670,221 @@ class KpopApp:
         stage = self.state.current_stage or "当前阶段"
         return f"{name} · {stage} · 第 {self.state.turn} 回合"
 
-    def show_contract_page(self) -> None:
+
+    def display_group_name(self, state: GameState | None = None) -> str:
+        """练习生阶段显示“练习生”；出道/出道准备后显示组合名。"""
+        s = state or self.state
+        if s is None:
+            return "练习生"
+        ch = s.character if isinstance(s.character, dict) else {}
+        debut = getattr(s, "debut", {}) or {}
+        comeback = getattr(s, "comeback", {}) or {}
+
+        if s.is_trainee_stage():
+            return "练习生"
+
+        candidates = []
+        for source in [ch, debut, comeback]:
+            if isinstance(source, dict):
+                for key in ["组合名", "团名", "出道组合", "组合", "group_name", "debut_group", "team_name"]:
+                    val = str(source.get(key) or "").strip()
+                    if val:
+                        candidates.append(val)
+
+        for flag in list(getattr(s, "flags", []) or []):
+            text = str(flag)
+            for prefix in ["组合名：", "组合：", "出道组合：", "团名："]:
+                if text.startswith(prefix):
+                    candidates.append(text.replace(prefix, "", 1).strip())
+
+        return candidates[0] if candidates else "出道组合未定"
+
+    def profile_table_row(self, label: str, value: Any, icon_name: str = "app_logo", color: str = "#9A8FC4"):
+        val = "" if value is None else str(value)
+        return ft.Container(
+            padding=ft.Padding(left=9, right=9, top=6, bottom=6),
+            border_radius=12,
+            bgcolor=ft.Colors.with_opacity(0.44, ft.Colors.WHITE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.32, C["line"])),
+            content=ft.Row([
+                ft.Container(icon_image(icon_name, 15, 0.88), width=20, height=20, border_radius=10, bgcolor=ft.Colors.with_opacity(0.20, color), alignment=ft.Alignment.CENTER),
+                ft.Text(label, width=82, size=self.ui_size(10), color=C["sub"], font_family=FONT_CN),
+                ft.Text(val or "—", size=self.ui_size(11), color=C["ink"], weight=ft.FontWeight.W_600, font_family=FONT_CN, expand=True, selectable=True),
+            ], spacing=7, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        )
+
+
+
+    def profile_sheet_section(self, title: str, subtitle: str, icon_name: str, rows: list[tuple], expand: bool = True):
+        return ft.Container(
+            expand=expand,
+            padding=14,
+            border_radius=22,
+            bgcolor=ft.Colors.with_opacity(0.48, ft.Colors.WHITE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.42, C["line"])),
+            content=ft.Column([
+                ft.Row([
+                    ft.Container(
+                        icon_image(icon_name, 18, 0.88),
+                        width=28,
+                        height=28,
+                        border_radius=14,
+                        bgcolor=ft.Colors.with_opacity(0.26, C["lotus"]),
+                        alignment=ft.Alignment.CENTER,
+                    ),
+                    ft.Column([
+                        ft.Text(title, size=self.ui_size(14), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                        ft.Text(subtitle, size=self.ui_size(10), color=C["sub"], font_family=FONT_CN),
+                    ], spacing=0, expand=True),
+                ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                self.profile_table(rows),
+            ], spacing=10),
+        )
+
+    def profile_sheet_panel(self, s: GameState, basic_rows: list[tuple], career_rows: list[tuple], body_mind_rows: list[tuple], social_rows: list[tuple], relation_rows: list[tuple], layout: Dict[str, int]):
+        """A single resume sheet instead of scattered floating cards."""
+        return ft.Container(
+            expand=True,
+            padding=18,
+            border_radius=34,
+            bgcolor=ft.Colors.with_opacity(0.76, ft.Colors.WHITE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.74, ft.Colors.WHITE)),
+            shadow=ft.BoxShadow(
+                blur_radius=30,
+                spread_radius=0,
+                color=ft.Colors.with_opacity(0.11, C["dai"]),
+                offset=ft.Offset(0, 10),
+            ),
+            content=ft.Column([
+                ft.Container(content=self.resume_header_card(s)),
+                ft.Row([
+                    self.profile_sheet_section("基础信息", "身份、组合与当前阶段", "new_character", basic_rows),
+                    self.profile_sheet_section("职业能力", "练习、舞台与镜头相关属性", "stage", career_rows),
+                ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
+                ft.Row([
+                    self.profile_sheet_section("身体与心理", "状态、压力与恢复", "health", body_mind_rows),
+                    self.profile_sheet_section("社会环境", "国籍、学校、家庭与适应压力", "school", social_rows),
+                    self.profile_sheet_section("关系概览", "团队、粉丝与外部反馈", "friendship", relation_rows),
+                ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
+            ], spacing=14, scroll=ft.ScrollMode.AUTO, expand=True),
+        )
+
+    def profile_grid_card(self, title: str, subtitle: str, icon_name: str, rows: list[tuple], width: int):
+        return self.static_page_card(
+            title,
+            subtitle,
+            icon_name,
+            self.profile_table(rows),
+            width=width,
+        )
+
+    def contract_layout_sizes(self) -> Dict[str, int]:
+        """Compute fixed card widths so the profile page does not form a broken masonry layout."""
+        try:
+            vw = int(self.page.width or 1360)
+        except Exception:
+            vw = 1360
+        # subpage horizontal padding is about 48. Left nav + right summary + 2 spacings.
+        main_w = max(780, vw - 48 - 298 - 298 - 36)
+        w3 = max(270, min(350, int((main_w - 36) / 3)))
+        w2 = max(420, min(560, int((main_w - 18) / 2)))
+        return {"side": 286, "summary": 286, "main": main_w, "w3": w3, "w2": w2}
+
+    def profile_table(self, rows: list[tuple], empty: str = "暂无数据"):
+        if not rows:
+            return ft.Text(empty, size=self.ui_size(12), color=C["sub"], font_family=FONT_CN)
+        controls = []
+        for row in rows:
+            label = row[0]
+            value = row[1] if len(row) > 1 else ""
+            icon_name = row[2] if len(row) > 2 else "app_logo"
+            color = row[3] if len(row) > 3 else C["lotus"]
+            controls.append(self.profile_table_row(label, value, icon_name, color))
+        return ft.Column(controls, spacing=6)
+
+    def resume_header_card(self, s: GameState):
+        ch = s.character if isinstance(s.character, dict) else {}
+        art_name = str(ch.get("艺名") or ch.get("本名") or s.save_name or "练习生")
+        real_name = str(ch.get("本名") or "").strip()
+        nationality = str(ch.get("国籍") or s.social_context.get("nationality") or "未填写")
+        age = ch.get("年龄") or s.age_context.get("age") or "未知"
+        identity = str(ch.get("身份") or "练习生")
+        mbti = str(ch.get("MBTI") or "未设定")
+        group_name = self.display_group_name(s)
+
+        return ft.Container(
+            padding=22,
+            border_radius=30,
+            bgcolor=ft.Colors.with_opacity(0.84, ft.Colors.WHITE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.70, ft.Colors.WHITE)),
+            shadow=ft.BoxShadow(blur_radius=28, color=ft.Colors.with_opacity(0.10, C["dai"]), offset=ft.Offset(0, 10)),
+            content=ft.Row([
+                ft.Stack([
+                    ft.Container(
+                        content=ft.Image(src=self.get_character_avatar_src(), width=96, height=96, fit="cover"),
+                        width=96,
+                        height=96,
+                        border_radius=30,
+                        clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                        border=ft.Border.all(2, ft.Colors.with_opacity(0.70, ft.Colors.WHITE)),
+                    ),
+                    ft.Container(
+                        content=ft.Image(src=flag_src_from_nationality(nationality), width=26, height=26, fit="cover"),
+                        width=32,
+                        height=32,
+                        border_radius=16,
+                        bgcolor=ft.Colors.WHITE,
+                        alignment=ft.Alignment.CENTER,
+                        left=70,
+                        top=70,
+                    ),
+                ], width=108, height=108),
+                ft.Column([
+                    ft.Row([
+                        ft.Text(art_name, size=self.ui_size(26), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN, max_lines=1),
+                        self.mini_chip(group_name, C["apricot"]),
+                        self.mini_chip(str(nationality), C["jade"]),
+                        self.mini_chip(f"{age}岁", C["lotus"]),
+                        self.mini_chip(mbti, C["lavender"]),
+                    ], spacing=8, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.Text(
+                        f"{real_name + ' · ' if real_name and real_name != art_name else ''}{identity}",
+                        size=self.ui_size(13),
+                        color=C["sub"],
+                        font_family=FONT_CN,
+                    ),
+                    ft.Text(
+                        f"{s.current_stage} · 第 {s.turn} 回合 · {s.current_mainline} · {s.current_schedule}",
+                        size=self.ui_size(12),
+                        color=C["dai"],
+                        font_family=FONT_CN,
+                        max_lines=2,
+                    ),
+                ], spacing=6, expand=True),
+            ], spacing=18, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        )
+
+    def contract_tab_button(self, label: str, icon_name: str, active: bool, handler):
+        color = C["jade"] if active else C["lotus"]
+        return ft.Container(
+            padding=ft.Padding(left=14, right=14, top=10, bottom=10),
+            border_radius=20,
+            bgcolor=ft.Colors.with_opacity(0.86 if active else 0.68, color if active else ft.Colors.WHITE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.52, color)),
+            ink=True,
+            on_click=handler,
+            content=ft.Row([
+                icon_image(icon_name, 18, 0.92),
+                ft.Text(label, size=self.ui_size(12), color=C["ink"] if active else C["dai"], weight=ft.FontWeight.W_700, font_family=FONT_CN),
+            ], spacing=7, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        )
+
+    def profile_value_rows(self, mapping: Dict[str, Any], icon_name: str = "app_logo", color: str = "#9A8FC4"):
+        return [(k, v, icon_name, color) for k, v in mapping.items()]
+
+    def show_contract_page(self, tab: str = "profile") -> None:
         if not self.load_latest_for_static_page():
-            self.static_empty_page("合同档案", "公司、合约与边界", "contract")
+            self.static_empty_page("档案与合约中心", "个人档案、公司合约与边界规则", "contract")
             return
         self.subpage_resize_refresh("contract")
 
@@ -682,68 +894,190 @@ class KpopApp:
         risks = s.risks if isinstance(s.risks, dict) else {}
         safety = s.safety if isinstance(s.safety, dict) else {}
         debut = s.debut if isinstance(s.debut, dict) else {}
+        ending = s.ending if isinstance(s.ending, dict) else {}
+        group_name = self.display_group_name(s)
+        layout = self.contract_layout_sizes()
 
         if s.is_trainee_stage():
             contract_name = "练习生协议"
             contract_phase = "训练观察期"
             activity_limit = "外出、公开社交、外部合作均需公司确认"
+        elif "出道准备" in str(s.current_stage) or debut.get("status") == "confirmed":
+            contract_name = "出道预备协议"
+            contract_phase = "出道准备期"
+            activity_limit = "组合企划、公开露出、社交媒体与个人活动由公司统一管理"
         else:
             contract_name = "专属艺人合约"
             contract_phase = "活动履行期"
             activity_limit = "公开行程、个人活动、品牌露出与恋爱相关议题均受公司管理"
 
-        risk_text = "\n".join([
-            f"• 当前合约：{contract_name}",
-            f"• 合约阶段：{contract_phase}",
-            f"• 活动限制：{activity_limit}",
-            f"• 公司信任：{company.get('公司信任度', 0)}",
-            f"• 资源倾斜：{company.get('资源倾斜度', 0)}",
-            f"• 个人议价：{company.get('个人议价权', 0)}",
-            f"• 续约倾向：{company.get('续约倾向', 0)}",
-            f"• 出道动向：{self.player_debut_status(debut)}",
-        ])
-        notes = "\n".join([
-            "• 低信任会提高请假、外出、调整训练计划时的阻力。",
-            "• 资源倾斜会影响镜头、训练机会、考核关注度与后续行程。",
-            "• 个人议价权会在续约、Solo、制作参与、个人活动窗口中发挥作用。",
-            "• 私自接触外部资源、绕开经纪人发声、公开暧昧关系，会显著提高公关与合约风险。",
-            "• 未成年或海外成员会额外受到监护、签证、学校和家庭沟通约束。",
-        ])
+        top_info = ft.Container(
+            width=layout["side"],
+            padding=16,
+            border_radius=28,
+            bgcolor=ft.Colors.with_opacity(0.82, ft.Colors.WHITE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.68, ft.Colors.WHITE)),
+            shadow=ft.BoxShadow(blur_radius=24, color=ft.Colors.with_opacity(0.10, C["dai"]), offset=ft.Offset(0, 8)),
+            content=ft.Column([
+                ft.Row([
+                    ft.Container(icon_image("contract", 24, 0.9), width=38, height=38, border_radius=19, bgcolor=ft.Colors.with_opacity(0.32, C["lotus"]), alignment=ft.Alignment.CENTER),
+                    ft.Column([
+                        ft.Text("档案导航", size=self.ui_size(17), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                        ft.Text(ch.get("艺名") or ch.get("本名") or s.save_name, size=self.ui_size(11), color=C["sub"], font_family=FONT_CN),
+                    ], spacing=1, expand=True),
+                ], spacing=10),
+                ft.Divider(height=14, color=ft.Colors.with_opacity(0.30, C["line"])),
+                self.text_line("组合名", group_name, "stage", C["apricot"]),
+                self.text_line("当前合约", contract_name, "contract", C["jade"]),
+                self.text_line("合约阶段", contract_phase, "schedule", C["lavender"]),
+                self.text_line("出道动向", self.player_debut_status(debut), "stage", C["apricot"]),
+                ft.Divider(height=14, color=ft.Colors.with_opacity(0.30, C["line"])),
+                self.contract_tab_button("个人档案", "new_character", tab == "profile", lambda e: self.show_contract_page("profile")),
+                self.contract_tab_button("合同信息", "contract", tab == "contract", lambda e: self.show_contract_page("contract")),
+            ], spacing=8),
+        )
+
+        risk_side = self.static_page_card(
+            "快速摘要",
+            "公司视角下的当前状态",
+            "safety",
+            ft.Column([
+                self.metric_bar("合约稳定度", company.get("合约稳定度", 0), "contract", C["jade"]),
+                self.metric_bar("公司信任度", company.get("公司信任度", 0), "staff_boundary", C["celadon"]),
+                self.metric_bar("资源倾斜度", company.get("资源倾斜度", 0), "market", C["jade"]),
+                self.metric_bar("个人议价权", company.get("个人议价权", 0), "contract", C["apricot"]),
+                self.metric_bar("公关危机风险", risks.get("公关危机风险", 0), "crisis_pr", C["rouge"], danger_high=True),
+                self.metric_bar("私生风险", risks.get("私生风险", 0), "safety", C["rouge"], danger_high=True),
+                self.metric_bar("边界风险", safety.get("boundary_violation_risk", 0), "staff_boundary", C["rouge"], danger_high=True),
+            ], spacing=7),
+            width=layout["summary"],
+        )
+
+        if tab == "contract":
+            clause_text = "\n".join([
+                f"• 活动限制：{activity_limit}",
+                "• 住宿管理：宿舍、门禁、夜间外出和访客管理由公司统一记录。",
+                "• 训练考核：月末考核、阶段评估、组合适配度会影响资源与出道窗口。",
+                "• 社交媒体：公开发声、照片发布、直播内容需遵守公司边界。",
+                "• 私人关系：恋爱、暧昧、工作人员越界、同龄关系曝光都会进入风险系统。",
+                "• 学业与监护：未成年、海外成员会额外涉及监护人、学校、签证与家庭沟通。",
+                "• 伤病上报：伤病、经期不适、睡眠失衡与心理压力会影响训练安排和合同风险。",
+            ])
+            history_items = []
+            for h in list(debut.get("history", []) or [])[-6:]:
+                if isinstance(h, dict):
+                    history_items.append(f"第 {h.get('turn')} 回合：准备度 {h.get('readiness')} / 概率 {h.get('probability')}% / 结果 {h.get('result')}")
+            if not history_items:
+                history_items = ["暂无正式出道评估记录。"]
+
+            contract_body = ft.Column([
+                ft.Row([
+                    self.static_page_card(
+                        "当前合同概况",
+                        "合同类型、阶段和公司绑定关系",
+                        "contract",
+                        self.profile_table([
+                            ("组合名", group_name, "stage", C["apricot"]),
+                            ("合同类型", contract_name, "contract", C["jade"]),
+                            ("签约阶段", contract_phase, "schedule", C["lavender"]),
+                            ("所属公司", ch.get("公司") or "未填写", "market", C["jade"]),
+                            ("公司满意", company.get("公司满意度"), "contract", C["jade"]),
+                            ("公司信任", company.get("公司信任度"), "staff_boundary", C["celadon"]),
+                            ("主推指数", company.get("主推指数"), "stage", C["lavender"]),
+                            ("续约倾向", company.get("续约倾向"), "contract", C["jade"]),
+                        ]),
+                        width=layout["w2"],
+                    ),
+                    self.static_page_card(
+                        "风险与边界",
+                        "合同可见的风险窗口",
+                        "safety",
+                        ft.Column([
+                            self.metric_bar("外出许可", safety.get("outing_permission"), "schedule", C["jade"]),
+                            self.metric_bar("宿舍安全", safety.get("dorm_security"), "safety", C["jade"]),
+                            self.metric_bar("恋爱风险", risks.get("恋爱风险"), "romance", C["rouge"], danger_high=True),
+                            self.metric_bar("行程泄露风险", risks.get("行程泄露风险"), "camera", C["rouge"], danger_high=True),
+                            self.metric_bar("性骚扰风险", risks.get("性骚扰风险"), "staff_boundary", C["rouge"], danger_high=True),
+                            self.metric_bar("霸凌排挤风险", risks.get("霸凌排挤风险"), "friendship", C["rouge"], danger_high=True),
+                        ], spacing=7),
+                        width=layout["w2"],
+                    ),
+                ], spacing=18, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.START),
+                self.static_page_card("核心条款", "第一版以可读条款展示，后续可扩展为逐条签署记录", "staff_boundary", self.static_text_block(clause_text, 8, 16)),
+                self.static_page_card("合同历史", "出道、延期、结局窗口和长期记录", "diary", self.static_text_block("\n".join(history_items + [f"当前未来方向：{self.player_ending_status(ending)}"]), 5, 10)),
+            ], spacing=18, scroll=ft.ScrollMode.AUTO, expand=True)
+            main_panel = ft.Container(expand=True, content=contract_body)
+        else:
+            basic_rows = [
+                ("本名", ch.get("本名") or "未填写", "new_character", C["lotus"]),
+                ("艺名", ch.get("艺名") or "未填写", "stage", C["lavender"]),
+                ("组合名", group_name, "stage", C["apricot"]),
+                ("身份", ch.get("身份") or "练习生", "contract", C["jade"]),
+                ("MBTI", ch.get("MBTI") or "未设定", "diary", C["lavender"]),
+                ("年龄", ch.get("年龄") or s.age_context.get("age") or "未知", "new_character", C["lotus"]),
+                ("国籍", ch.get("国籍") or s.social_context.get("nationality") or "未填写", "market", C["jade"]),
+                ("年龄段", s.age_context.get("age_group"), "school", C["lavender"]),
+                ("未成年", "是" if s.age_context.get("is_minor") else "否", "safety", C["apricot"]),
+                ("当前阶段", s.current_stage, "schedule", C["lavender"]),
+                ("当前主线", s.current_mainline, "diary", C["jade"]),
+                ("当前行程", s.current_schedule, "schedule", C["apricot"]),
+                ("当前日期", s.time.get("current_date"), "schedule", C["jade"]),
+            ]
+            career_rows = self.profile_value_rows(s.career or {}, "stage", C["lavender"])
+            body_mind_rows = self.profile_value_rows(s.body or {}, "health", C["jade"]) + self.profile_value_rows(s.mind or {}, "diary", C["lotus"])
+            social_rows = [
+                ("语言压力", s.social_context.get("language_barrier"), "market", C["apricot"]),
+                ("文化适应", s.social_context.get("cultural_adaptation"), "hierarchy", C["jade"]),
+                ("签证压力", s.social_context.get("visa_pressure"), "contract", C["rouge"]),
+                ("学校类型", s.school.get("school_type"), "school", C["lavender"]),
+                ("出勤压力", s.school.get("attendance_pressure"), "school", C["rouge"]),
+                ("家庭支持", s.family.get("emotional_support"), "family", C["jade"]),
+                ("家庭冲突", s.family.get("conflict_level"), "family", C["rouge"]),
+                ("控制欲", s.family.get("control_level"), "family", C["apricot"]),
+            ]
+            relation_rows = [
+                ("团队默契", self.vget(s.team, "团队默契度", "团队默契"), "friendship", C["jade"]),
+                ("队内信任", s.team.get("队内信任度"), "friendship", C["celadon"]),
+                ("真实关系温度", s.team.get("真实关系温度"), "romance", C["lotus"]),
+                ("个人粉丝", self.vget(s.fans, "个人粉丝", "个人粉丝数"), "fans", C["jade"]),
+                ("团体粉丝", self.vget(s.fans, "团体粉丝", "团体粉丝数"), "fans", C["celadon"]),
+                ("粉圈撕裂", s.fans.get("粉圈撕裂度"), "crisis_pr", C["rouge"]),
+            ]
+
+            main_panel = ft.Container(
+                expand=True,
+                content=self.profile_sheet_panel(
+                    s,
+                    basic_rows,
+                    career_rows,
+                    body_mind_rows,
+                    social_rows,
+                    relation_rows,
+                    layout,
+                ),
+            )
+
 
         mode = self.subpage_layout_mode()
-        side_w = None if mode == "narrow" else self.ui_size(340)
-        controls = [
-            self.static_page_card(
-                "合约概览", "当前角色与公司的绑定关系", "contract",
-                ft.Column([
-                    self.text_line("角色", ch.get("艺名") or ch.get("本名") or s.save_name, "new_character", C["lotus"]),
-                    self.text_line("身份", ch.get("身份", "练习生"), "stage", C["jade"]),
-                    self.text_line("国籍", ch.get("国籍", "未填写"), "market", C["apricot"]),
-                    self.text_line("阶段", contract_phase, "schedule", C["lavender"]),
-                    self.text_line("当前主线", s.current_mainline, "diary", C["lotus"]),
-                ], spacing=self.ui_size(8)),
-                width=side_w,
-            ),
-            ft.Container(
+        if mode == "narrow":
+            body = ft.Column(
+                [top_info, main_panel, risk_side],
+                spacing=18,
+                scroll=ft.ScrollMode.AUTO,
                 expand=True,
-                content=ft.Column([
-                    self.static_page_card("关键条款", "静态浏览版：先展示，不开放修改", "staff_boundary", self.static_text_block(risk_text, 8, 14)),
-                    self.static_page_card("风险说明", "这些内容会影响行动合法性与剧情后果", "crisis_pr", self.static_text_block(notes, 8, 14)),
-                ], spacing=self.ui_size(18), scroll=ft.ScrollMode.AUTO, expand=True),
-            ),
-            self.static_page_card(
-                "风险与边界", "公司可见的风险状态", "safety",
-                ft.Column([
-                    self.metric_bar("合约稳定度", company.get("合约稳定度", 0), "contract", C["jade"]),
-                    self.metric_bar("公关危机风险", risks.get("公关危机风险", 0), "crisis_pr", C["rouge"], danger_high=True),
-                    self.metric_bar("私生风险", risks.get("私生风险", 0), "safety", C["rouge"], danger_high=True),
-                    self.metric_bar("边界风险", safety.get("boundary_violation_risk", 0), "staff_boundary", C["rouge"], danger_high=True),
-                    self.metric_bar("外出许可", safety.get("outing_permission", 0), "schedule", C["jade"]),
-                ], spacing=self.ui_size(6)),
-                width=side_w,
-            ),
-        ]
-        self.subpage_shell("合同档案", self.active_character_label(), "contract", self.static_responsive_row(controls))
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            )
+        else:
+            body = ft.Row(
+                [top_info, main_panel, risk_side],
+                spacing=18,
+                alignment=ft.MainAxisAlignment.CENTER,
+                vertical_alignment=ft.CrossAxisAlignment.STRETCH,
+                expand=True,
+            )
+
+        self.subpage_shell("档案与合约中心", self.active_character_label(), "contract", body)
+
 
     def turn_date_for_diary(self, turn_no: int, row_created_at: str | None = None) -> str:
         if self.state is not None and isinstance(self.state.time, dict):
@@ -818,6 +1152,7 @@ class KpopApp:
                     "禁止写系统词、数值、JSON解释、少女心事系统、生理周期系统、属性变化、DS、API。"
                     "可以把身体不适、经期困扰、友情、暧昧、被照顾、被忽视、家庭压力、学校压力、公司压迫、练习室疲惫写成含蓄的内心感受。"
                     "文风细腻、真实、克制，第一人称，不写流水账，不靠对话堆砌。"
+                    "日记语气要受角色MBTI影响：MBTI只影响表达倾向和内在归因，不要写成刻板人格说明。"
                     "字段：title, content, mood, tags, related_people。content 120到220字。"
                 ),
             },
@@ -829,6 +1164,8 @@ class KpopApp:
                         "age": ch.get("年龄"),
                         "nationality": ch.get("国籍"),
                         "identity": ch.get("身份"),
+                        "mbti": ch.get("MBTI"),
+                        "mbti_profile": ch.get("MBTI人格倾向"),
                     },
                     "turn": turn_no,
                     "date": self.turn_date_for_diary(turn_no, row["created_at"] if "created_at" in row.keys() else None),
@@ -1184,18 +1521,9 @@ class KpopApp:
 
 
     def settings_page_bg(self):
-        return ft.Container(
-            left=0,
-            top=0,
-            right=0,
-            bottom=0,
-            bgcolor="#F8F7FC",
-            image=ft.DecorationImage(
-                src=asset("backgrounds/settings_bg_v3.png"),
-                fit="cover",
-                opacity=1.0,
-            ),
-        )
+        # 右上角功能页统一背景：设置 / 存档 / 日记 / 合同 / 行程保持同一套视觉。
+        return self.static_page_bg()
+
 
     def settings_card(self, title: str, subtitle: str, icon_name: str, controls: list, width: int | None = None):
         return ft.Container(
@@ -1529,61 +1857,797 @@ class KpopApp:
         stamp = random.randint(100, 999)
         return {"艺名": f"Stella{stamp}", "本名": f"星光练习生{stamp}"}
 
+
+    def character_create_bg(self):
+        return ft.Container(
+            left=0,
+            top=0,
+            right=0,
+            bottom=0,
+            bgcolor="#F8F6FC",
+            image=ft.DecorationImage(
+                src=asset("backgrounds/character_create_office_bg_v2.png"),
+                fit="cover",
+                opacity=0.94,
+            ),
+        )
+
+    def character_form_field_style(self):
+        return {
+            "border_radius": 18,
+            "border_color": ft.Colors.with_opacity(0.48, C["line"]),
+            "focused_border_color": C["dai"],
+            "bgcolor": ft.Colors.with_opacity(0.68, ft.Colors.WHITE),
+            "content_padding": ft.Padding(left=14, right=14, top=10, bottom=10),
+            "text_style": ft.TextStyle(font_family=FONT_CN, color=C["ink"], size=self.ui_size(13)),
+            "label_style": ft.TextStyle(font_family=FONT_CN, color=C["sub"], size=self.ui_size(11)),
+        }
+
+    def dice_button(self, handler, tooltip: str = "随机生成"):
+        return ft.Container(
+            width=42,
+            height=42,
+            border_radius=18,
+            bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.46, C["line"])),
+            alignment=ft.Alignment.CENTER,
+            ink=True,
+            tooltip=tooltip,
+            on_click=handler,
+            content=icon_image("dice", 22, 0.94),
+        )
+
+    def random_character_field_value(self, field_name: str, nationality: str | None = None) -> str:
+        text = str(nationality or "").strip().lower()
+        pool = {
+            "身高": ["158", "160", "162", "164", "166", "168", "170", "172"],
+            "外貌特征": ["清冷幼态，镜头里有反差感", "淡颜系，笑起来很有亲和力", "五官干净，舞台妆后冲击力强", "眼神很亮，适合清新和梦幻概念", "骨相利落，适合高冷概念"],
+            "性格": ["慢热但很能忍，熟悉后会变得很黏人", "外表安静，胜负欲很强", "敏感细腻，习惯先照顾别人情绪", "有点倔，压力越大越不愿服输", "社交谨慎，但对认可的人很真诚"],
+            "爱好": ["拍天空、写短日记、听老歌", "整理手账、看舞台直拍、喝冰美式", "逛文具店、听 demo、夜跑", "看电影、练手势舞、收集香水小样", "做饭、拍胶片、拆解舞台编排"],
+            "特长": ["记动作很快，能自己扒舞", "音色清亮，适合副歌和桥段", "节奏感好，rap 咬字干净", "镜头感强，ending 表情稳定", "共情力强，适合综艺和采访"],
+            "弱项": ["体能储备不足，连续高强度训练容易崩", "韩语表达慢，临场采访会紧张", "低音区不稳，需要长期声乐训练", "太在意别人评价，容易内耗", "力量不足，大框架动作需要强化"],
+            "家庭状况": ["普通家庭，支持有限但情感上愿意理解", "父母现实保守，对出道结果很焦虑", "家里经济压力不小，希望她尽快有结果", "母亲支持，父亲更看重学业稳定", "家庭沟通少，她习惯自己做决定"],
+            "练习生经历": ["有舞社基础，但没有系统训练经历", "参加过校园演出，镜头经验很少", "通过线上选拔入社，基础不均衡", "曾短期参加培训班，基本功还在补", "做过伴舞替补，对舞台流程有概念"],
+            "在团定位": ["主舞候补", "副主唱候补", "门面候补", "综艺反应位", "忙内线候补", "全能型练习生"],
+            "你希望观众记住你的什么": ["她不是最亮的那一个，但每次都会再往前走一点", "看似安静，真正上台时会把人拉进她的情绪里", "她的努力不是口号，是每一天都能看见的变化", "她有一种干净又倔强的生命力", "她能把脆弱和野心同时放进舞台里"],
+            "你不希望剧情触碰的内容": ["不写极端暴力和羞辱性情节", "不写过度黑暗的家庭创伤", "不写未成年露骨恋爱描写", "不写强制亲密关系", "不写不可逆的重大身体伤害"],
+            "其他补充": ["希望整体路线偏成长流，慢热关系，重视舞台和日常细节。", "希望有友情、竞争和公司压力，但不要每回合都高强度危机。", "希望角色会犯错，也会逐渐学会保护自己。", "希望剧情里多出现练习室、宿舍、考核和舞台前准备。"],
+        }
+        if field_name == "国籍":
+            return random.choice(["中国", "韩国", "日本", "泰国", "美国华裔"])
+        if field_name == "年龄":
+            return random.choice(["15", "16", "17", "18", "19", "20", "21"])
+        return random.choice(pool.get(field_name, [""]))
+
+
+    def mbti_options(self) -> list[str]:
+        return [
+            "INTJ", "INTP", "ENTJ", "ENTP",
+            "INFJ", "INFP", "ENFJ", "ENFP",
+            "ISTJ", "ISFJ", "ESTJ", "ESFJ",
+            "ISTP", "ISFP", "ESTP", "ESFP",
+        ]
+
+    def random_mbti(self) -> str:
+        return random.choice(self.mbti_options())
+
+    def mbti_profile(self, mbti: str | None) -> Dict[str, Any]:
+        """Narrative/control profile for MBTI.
+
+        MBTI is treated as a game-writing control variable, not as a real psychological diagnosis.
+        It gives the model stable reaction tendencies and gives the rules a small initial-stat bias.
+        """
+        code = str(mbti or "").upper().strip()
+        if code not in self.mbti_options():
+            code = "INFP"
+        e, p, j, l = code[0], code[1], code[2], code[3]
+        dimension = {
+            "energy": "外向" if e == "E" else "内向",
+            "information": "直觉" if p == "N" else "实感",
+            "decision": "情感" if j == "F" else "思考",
+            "lifestyle": "计划" if l == "J" else "即兴",
+        }
+        tendency = []
+        tags = [f"MBTI:{code}", f"MBTI-{e}", f"MBTI-{p}", f"MBTI-{j}", f"MBTI-{l}"]
+
+        if e == "E":
+            tendency.append("更容易主动接触同期、老师和工作人员，综艺反应更外放，但也更容易被镜头和舆论放大。")
+            tags += ["社交主动", "综艺潜力"]
+        else:
+            tendency.append("更倾向先观察再靠近，内心活动密度更高，关系升温慢但黏性强，压力更容易在沉默里累积。")
+            tags += ["内向观察", "日记倾向"]
+        if p == "N":
+            tendency.append("更重视概念理解、舞台叙事和自我表达，适合创作、概念消化和复杂情绪线。")
+            tags += ["概念理解", "创作兴趣"]
+        else:
+            tendency.append("更重视细节复现、训练秩序和身体执行，考核稳定性更强。")
+            tags += ["训练纪律", "动作复现"]
+        if j == "F":
+            tendency.append("更容易共情队友、粉丝和家人，也更容易把冲突归因到自己身上。")
+            tags += ["共情敏感", "团队亲和"]
+        else:
+            tendency.append("更习惯用理性拆解问题，边界感更清楚，关系表达较慢热。")
+            tags += ["理性边界", "冲突直面"]
+        if l == "J":
+            tendency.append("更依赖计划、稳定日程和明确目标，公司信任更容易建立，但责任感压力更强。")
+            tags += ["计划性", "责任压力"]
+        else:
+            tendency.append("更依赖现场反应和即兴调整，舞台灵活性强，但纪律和行程风险更高。")
+            tags += ["即兴反应", "纪律波动"]
+        return {
+            "code": code,
+            "dimension": dimension,
+            "narrative_tendency": tendency,
+            "stat_tags": tags,
+            "prompt_rule": "MBTI只作为反应倾向与叙事稳定器，不允许把角色写成刻板人格模板；角色可以成长、矛盾、违背惯性。",
+        }
+
+    def infer_source_tags(self, character: Dict[str, Any]) -> list[str]:
+        """Rule-based auto tag matching from visible character fields.
+
+        This replaces manual '出身来源标签' input. Tags are used only as initial
+        background signals; the player no longer needs to type them.
+        """
+        tags: list[str] = []
+        joined = " ".join(str(v) for v in character.values() if v is not None)
+        age = None
+        try:
+            age = int(str(character.get("年龄") or "").strip())
+        except Exception:
+            pass
+
+        mbti_profile = self.mbti_profile(character.get("MBTI"))
+        for tag in mbti_profile.get("stat_tags", []):
+            if tag not in tags:
+                tags.append(tag)
+
+        nationality = str(character.get("国籍") or "").strip()
+        if nationality:
+            if "韩国" in nationality:
+                tags.append("本土练习生")
+            elif "日本" in nationality or "中国" in nationality or "泰国" in nationality or "美国" in nationality:
+                tags.append("海外练习生")
+
+        if age is not None:
+            if age < 16:
+                tags.append("低龄入社")
+            elif age >= 20:
+                tags.append("大龄练习生")
+            else:
+                tags.append("适龄练习生")
+
+        keyword_rules = [
+            ("舞", "舞蹈基础"),
+            ("舞社", "舞蹈基础"),
+            ("扒舞", "舞蹈基础"),
+            ("声乐", "声乐基础"),
+            ("音色", "声乐基础"),
+            ("唱", "声乐基础"),
+            ("rap", "RAP基础"),
+            ("节奏", "RAP基础"),
+            ("镜头", "镜头优势"),
+            ("门面", "视觉优势"),
+            ("外貌", "视觉优势"),
+            ("综艺", "综艺潜力"),
+            ("采访", "综艺潜力"),
+            ("校园", "校园演出经验"),
+            ("线上选拔", "线上选拔入社"),
+            ("家庭压力", "家庭压力"),
+            ("经济压力", "家庭压力"),
+            ("学业", "学业压力"),
+            ("韩语", "语言压力"),
+            ("内耗", "心理敏感"),
+            ("敏感", "心理敏感"),
+            ("体能", "体能短板"),
+            ("伤", "身体风险"),
+        ]
+        for key, tag in keyword_rules:
+            if key.lower() in joined.lower() and tag not in tags:
+                tags.append(tag)
+
+        if not tags:
+            tags = ["普通练习生", "待观察"]
+        return tags[:8]
+
+    def build_random_character_seed(self, fields: Dict[str, Any]) -> None:
+        names = self.random_character_names(fields["国籍"].value)
+        fields["艺名"].value = names["艺名"]
+        fields["本名"].value = names["本名"]
+        for key in ["国籍", "年龄", "身高", "外貌特征", "性格", "爱好", "特长", "弱项", "家庭状况", "练习生经历", "在团定位", "你希望观众记住你的什么", "你不希望剧情触碰的内容", "其他补充"]:
+            if key in fields:
+                fields[key].value = self.random_character_field_value(key, fields["国籍"].value)
+
+    def validate_character_numeric_fields(self, character: Dict[str, Any]) -> list[str]:
+        errors: list[str] = []
+        raw_age = str(character.get("年龄") or "").strip()
+        if raw_age:
+            try:
+                age = int(raw_age)
+                if age < 10 or age > 30:
+                    errors.append("年龄建议填写 10—30 之间的整数。")
+            except Exception:
+                errors.append("年龄必须是整数，例如 18。")
+
+        raw_height = str(character.get("身高") or "").strip().replace("cm", "").replace("CM", "").replace("厘米", "")
+        if raw_height:
+            try:
+                height = float(raw_height)
+                if height < 130 or height > 190:
+                    errors.append("身高建议填写 130—190 之间的数值，单位为 cm。")
+                else:
+                    character["身高"] = f"{int(height) if height.is_integer() else height}cm"
+            except Exception:
+                errors.append("身高必须是数值，例如 165，系统会自动补成 165cm。")
+        return errors
+
+
+    def character_select_dropdown(self, label: str, value: str, options: list[str], width: int = 320):
+        return ft.Dropdown(
+            label=label,
+            value=value,
+            width=width,
+            options=[ft.dropdown.Option(x) for x in options],
+            border_radius=18,
+            border_color=ft.Colors.with_opacity(0.52, C["line"]),
+            focused_border_color=C["dai"],
+            bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE),
+            content_padding=ft.Padding(left=14, right=14, top=8, bottom=8),
+            text_style=ft.TextStyle(font_family=FONT_CN, color=C["ink"], size=self.ui_size(13)),
+            label_style=ft.TextStyle(font_family=FONT_CN, color=C["sub"], size=self.ui_size(11)),
+        )
+
+    def period_intro_button(self):
+        return ft.Container(
+            padding=ft.Padding(left=13, right=13, top=9, bottom=9),
+            border_radius=20,
+            bgcolor=ft.Colors.with_opacity(0.82, ft.Colors.WHITE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.50, C["line"])),
+            ink=True,
+            on_click=lambda e: self.show_period_intro_dialog(),
+            content=ft.Row([
+                icon_image("period", 18, 0.92),
+                ft.Text("生理周期系统介绍", size=self.ui_size(12), color=C["dai"], weight=ft.FontWeight.W_700, font_family=FONT_CN),
+            ], spacing=7, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        )
+
+    def show_period_intro_dialog(self) -> None:
+        intro_sections = [
+            ("系统作用", "生理周期系统会让角色的身体状态、训练效率、睡眠、体重管理压力、情绪波动、伤病风险和关系事件产生联动。它不是单纯扣数值，而是把练习生的身体负担写进日常。"),
+            ("游戏影响", "经前期可能出现睡眠下降、情绪敏感、体重管理压力上升；生理期前段会影响体力、肌肉恢复、训练效率和伤病风险。高强度训练、舞台服装、外出行程、是否向经纪人或队友说明，都会影响后续事件。"),
+            ("关闭", "不计算周期，不触发相关事件。适合完全不想让身体系统进入剧情的玩家。"),
+            ("简化", "保留核心影响：体力、睡眠、训练效率、伤病风险、少量状态提醒。适合想要沉浸感，但不希望系统过细的玩家。"),
+            ("极致", "在简化基础上加入更细的沉浸事件：用品准备、服装焦虑、是否求助、是否向管理层说明、长期压力导致周期不规律、队友照顾和边界变化等。"),
+            ("建议", "建议开启。它能让角色不再只是数值面板，而是一个有身体、有边界、有日常负担的人，沉浸感会更强。"),
+        ]
+
+        section_controls = []
+        for title, body in intro_sections:
+            section_controls.append(
+                ft.Container(
+                    padding=ft.Padding(left=18, right=18, top=14, bottom=14),
+                    border_radius=22,
+                    bgcolor=ft.Colors.with_opacity(0.68, ft.Colors.WHITE),
+                    border=ft.Border.all(1, ft.Colors.with_opacity(0.48, C["line"])),
+                    content=ft.Column([
+                        ft.Text(title, size=self.ui_size(15), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                        ft.Text(body, size=self.ui_size(13), color=C["sub"], font_family=FONT_CN, selectable=True),
+                    ], spacing=5),
+                )
+            )
+
+        try:
+            vw = int(self.page.width or 1500)
+            vh = int(self.page.height or 900)
+        except Exception:
+            vw, vh = 1500, 900
+        dialog_w = max(900, min(1180, vw - 160))
+        dialog_h = max(620, min(760, vh - 120))
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            content_padding=0,
+            title_padding=0,
+            actions_padding=ft.Padding(left=22, right=22, top=0, bottom=16),
+            content=ft.Container(
+                width=dialog_w,
+                height=dialog_h,
+                border_radius=34,
+                clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                content=ft.Stack([
+                    ft.Container(
+                        left=0,
+                        top=0,
+                        right=0,
+                        bottom=0,
+                        image=ft.DecorationImage(
+                            src=asset("backgrounds/period_help_dorm_bg.png"),
+                            fit="cover",
+                            opacity=0.92,
+                        ),
+                    ),
+                    ft.Container(
+                        left=0,
+                        top=0,
+                        right=0,
+                        bottom=0,
+                        bgcolor=ft.Colors.with_opacity(0.30, ft.Colors.WHITE),
+                    ),
+                    ft.Container(
+                        left=34,
+                        top=30,
+                        right=34,
+                        bottom=30,
+                        padding=22,
+                        border_radius=30,
+                        bgcolor=ft.Colors.with_opacity(0.74, ft.Colors.WHITE),
+                        border=ft.Border.all(1, ft.Colors.with_opacity(0.66, ft.Colors.WHITE)),
+                        shadow=ft.BoxShadow(
+                            blur_radius=30,
+                            color=ft.Colors.with_opacity(0.12, C["dai"]),
+                            offset=ft.Offset(0, 10),
+                        ),
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Container(icon_image("period", 28, 0.94), width=46, height=46, border_radius=23, bgcolor=ft.Colors.with_opacity(0.34, C["lotus"]), alignment=ft.Alignment.CENTER),
+                                ft.Column([
+                                    ft.Text("生理周期系统介绍", size=self.ui_size(24), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                                    ft.Text("身体状态、训练效率、关系事件和沉浸日常的联动说明", size=self.ui_size(12), color=C["sub"], font_family=FONT_CN),
+                                ], spacing=1, expand=True),
+                            ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                            ft.Divider(height=18, color=ft.Colors.with_opacity(0.35, C["line"])),
+                            ft.Column(section_controls, spacing=12, scroll=ft.ScrollMode.AUTO, expand=True),
+                        ], spacing=10, expand=True),
+                    ),
+                ]),
+            ),
+            actions=[
+                ft.TextButton("知道了", on_click=lambda e: self.close_dialog()),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        try:
+            self.page.dialog = dialog
+            dialog.open = True
+        except Exception:
+            pass
+        try:
+            if dialog not in self.page.overlay:
+                self.page.overlay.append(dialog)
+            dialog.open = True
+        except Exception:
+            pass
+        self.page.update()
+
+
+    def close_dialog(self) -> None:
+        try:
+            if self.page.dialog:
+                self.page.dialog.open = False
+        except Exception:
+            pass
+        try:
+            for item in self.page.overlay:
+                if isinstance(item, ft.AlertDialog):
+                    item.open = False
+        except Exception:
+            pass
+        self.page.update()
+
+    def parse_json_object_from_text(self, raw: str) -> Dict[str, Any]:
+        text = str(raw or "").strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?", "", text).strip()
+            text = re.sub(r"```$", "", text).strip()
+        try:
+            data = json.loads(text)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            pass
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            data = json.loads(text[start:end + 1])
+            return data if isinstance(data, dict) else {}
+        return {}
+
+    def normalize_ai_character_match(self, payload: Dict[str, Any], basic: Dict[str, Any]) -> Dict[str, Any]:
+        allowed_fields = [
+            "外貌风格", "性格", "爱好", "特长", "弱项", "家庭状况", "练习生经历",
+            "在团定位", "你希望观众记住你的什么", "其他补充",
+        ]
+        result: Dict[str, Any] = {}
+        for key in allowed_fields:
+            value = payload.get(key, "")
+            if isinstance(value, (list, tuple)):
+                value = "、".join(str(x) for x in value if str(x).strip())
+            result[key] = str(value or "").strip()[:380]
+
+        tags = payload.get("出身来源标签", [])
+        if isinstance(tags, str):
+            tags = [x.strip() for x in re.split(r"[,，、/\\n]", tags) if x.strip()]
+        elif isinstance(tags, list):
+            tags = [str(x).strip() for x in tags if str(x).strip()]
+        else:
+            tags = []
+        if not tags:
+            temp = dict(basic)
+            temp.update(result)
+            tags = self.infer_source_tags(temp)
+        result["出身来源标签"] = tags[:8]
+
+        # This field is shown only in UI/status and saved into character data.
+        notes = payload.get("基础数值倾向", [])
+        if isinstance(notes, str):
+            notes = [x.strip() for x in re.split(r"[,，、/\\n]", notes) if x.strip()]
+        elif isinstance(notes, list):
+            notes = [str(x).strip() for x in notes if str(x).strip()]
+        else:
+            notes = []
+        result["基础数值倾向"] = notes[:8]
+        return result
+
+    def fallback_ai_character_match(self, basic: Dict[str, Any]) -> Dict[str, Any]:
+        """Fallback used when model call fails; still keeps MBTI/tag/stat logic working."""
+        identity = str(basic.get("身份") or "")
+        nationality = str(basic.get("国籍") or "")
+        age = str(basic.get("年龄") or "")
+        height = str(basic.get("身高") or "")
+        mbti = str(basic.get("MBTI") or "INFP").upper()
+        art_name = str(basic.get("艺名") or basic.get("本名") or "她")
+        overseas = nationality and "韩国" not in nationality
+        profile = self.mbti_profile(mbti)
+        tendency = "；".join(profile.get("narrative_tendency", []))
+        base = {
+            "外貌风格": f"{art_name}适合清透梦幻系视觉，镜头里偏干净、轻盈；身高{height or '未知'}，适合根据舞台概念强化线条感。",
+            "性格": f"MBTI为{mbti}。{tendency} 她不是人格测试标签本身，而是在练习室压力下逐渐显露这些反应倾向。",
+            "爱好": "听 demo、整理练习笔记、看舞台直拍、拍天空和练习室角落。",
+            "特长": "舞蹈基础和镜头学习能力较好，能快速记住动作重点。",
+            "弱项": "体能储备和语言表达仍需训练，连续高压时容易内耗。",
+            "家庭状况": "家庭支持存在但不稳定，家人既期待她成功，也担心这条路太不确定。",
+            "练习生经历": f"{identity}入社，基础不均衡，但可塑性强。",
+            "在团定位": "主舞候补 / 清冷视觉线 / 成长型全能练习生",
+            "你希望观众记住你的什么": "希望观众记住她不是天生闪耀，而是在每一次训练里慢慢把自己磨亮。",
+            "其他补充": "路线偏成长流，重视练习室、宿舍、考核、友情、竞争和公司压力。",
+            "出身来源标签": ["海外练习生" if overseas else "普通练习生", "适龄练习生", "舞蹈基础", "镜头优势", "体能短板", *profile.get("stat_tags", [])],
+            "基础数值倾向": ["舞蹈实力略高", "舞台感染力略高", "体力偏低", "精神压力略高", f"MBTI:{mbti}影响叙事反应和关系节奏"],
+        }
+        if age:
+            try:
+                age_i = int(re.search(r"\d+", age).group())
+                if age_i < 16:
+                    base["出身来源标签"].append("低龄入社")
+                elif age_i >= 20:
+                    base["出身来源标签"].append("大龄练习生")
+            except Exception:
+                pass
+        # 去重
+        seen = []
+        for t in base["出身来源标签"]:
+            if t and t not in seen:
+                seen.append(t)
+        base["出身来源标签"] = seen[:10]
+        return base
+
+    def generate_character_match_with_llm(self, basic: Dict[str, Any]) -> Dict[str, Any]:
+        system = (
+            "你是KPOP女团练习生叙事模拟器的角色设定生成器。"
+            "你要根据玩家已经填写的基础信息，尤其是MBTI，自动匹配角色的外貌风格、性格、家庭背景、练习生经历、定位、优势短板和出身来源标签。"
+            "MBTI在这里是叙事控制变量，不是真实心理诊断；它只能影响反应倾向、关系节奏和压力表达，不能把角色写成刻板模板。"
+            "要求：1. 必须严格输出JSON对象；2. 不要Markdown；3. 不要解释；4. 内容要现实，符合KPOP练习生生态；"
+            "5. 不要写露骨性内容；6. 标签会影响初始数值，所以要明确给出能被系统识别的标签。"
+        )
+        user = {
+            "基础信息": basic,
+            "MBTI叙事倾向": self.mbti_profile(basic.get("MBTI")),
+            "必须输出字段": [
+                "外貌风格", "性格", "爱好", "特长", "弱项", "家庭状况", "练习生经历",
+                "在团定位", "你希望观众记住你的什么", "其他补充",
+                "出身来源标签", "基础数值倾向",
+            ],
+            "标签候选": [
+                "海外练习生", "本土练习生", "低龄入社", "适龄练习生", "大龄练习生",
+                "舞蹈基础", "声乐基础", "RAP基础", "表演基础", "创作兴趣",
+                "镜头优势", "视觉优势", "综艺潜力", "语言压力", "家庭压力",
+                "体能短板", "心理敏感", "校园演出经验", "线上选拔入社", "选秀淘汰者",
+                "童星/模特", "优渥家庭", "前运动员",
+            ],
+            "数值影响说明": "出身来源标签会影响初始职业属性、身体状态、心理压力、粉丝与市场倾向。",
+        }
+        provider = get_llm_provider(self.config)
+        raw = provider.generate(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
+            ],
+            model=self.config.model_for_tier("flash"),
+        )
+        payload = self.parse_json_object_from_text(raw)
+        if not payload:
+            raise LLMError("角色匹配模型没有返回可解析JSON。")
+        return self.normalize_ai_character_match(payload, basic)
+
+
+    def generated_result_field_card(self, title: str, field: ft.TextField, icon_name: str = "stage", width: int = 430, lines: int = 4):
+        field.width = width - 34
+        field.multiline = True
+        field.min_lines = lines
+        field.max_lines = lines
+        field.border_radius = 16
+        field.bgcolor = ft.Colors.with_opacity(0.72, ft.Colors.WHITE)
+        field.border_color = ft.Colors.with_opacity(0.44, C["line"])
+        field.focused_border_color = C["dai"]
+        field.content_padding = ft.Padding(left=12, right=12, top=10, bottom=10)
+        field.text_style = ft.TextStyle(font_family=FONT_CN, color=C["ink"], size=self.ui_size(12))
+        field.label = ""
+        return ft.Container(
+            width=width,
+            padding=14,
+            border_radius=24,
+            bgcolor=ft.Colors.with_opacity(0.58, ft.Colors.WHITE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.52, C["line"])),
+            content=ft.Column([
+                ft.Row([
+                    ft.Container(icon_image(icon_name, 17, 0.88), width=26, height=26, border_radius=13, bgcolor=ft.Colors.with_opacity(0.26, C["lotus"]), alignment=ft.Alignment.CENTER),
+                    ft.Text(title, size=self.ui_size(13), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                ], spacing=7, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                field,
+            ], spacing=8),
+        )
+
+    def generated_result_row(self, cards: list):
+        return ft.Row(cards, spacing=14, wrap=True, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.START)
+
     def show_character_create(self) -> None:
         self.clear()
-        fields: Dict[str, ft.TextField] = {}
-        labels = ["艺名", "本名", "国籍", "年龄", "身高", "外貌特征", "性格", "爱好", "特长", "弱项", "家庭状况", "练习生经历", "在团定位", "你希望观众记住你的什么", "你不希望剧情触碰的内容", "其他补充"]
-        for label in labels:
-            fields[label] = ft.TextField(label=label, width=470)
-        identity = ft.Dropdown(label="身份", width=470, options=[ft.dropdown.Option("素人学生被星探发现"), ft.dropdown.Option("富二代 / 优渥家庭出身"), ft.dropdown.Option("某位 KPOP 顶流爱豆的妹妹 / 亲属"), ft.dropdown.Option("海外追梦练习生"), ft.dropdown.Option("前运动员转型练习生"), ft.dropdown.Option("选秀节目淘汰者"), ft.dropdown.Option("小公司前成员 / 再出道"), ft.dropdown.Option("自定义身份")], value="素人学生被星探发现")
-        source_tags = ft.TextField(label="出身来源标签，多个用逗号分隔", width=470, hint_text="街头星探, 校园舞蹈社, 前运动员")
-        timeline = ft.Dropdown(label="时间线", width=470, options=[ft.dropdown.Option("练习生阶段"), ft.dropdown.Option("出道前一天"), ft.dropdown.Option("回归瓶颈期"), ft.dropdown.Option("续约前一年")], value="练习生阶段")
-        period_mode = ft.Dropdown(
-            label="生理周期系统（可关闭）",
-            width=470,
-            options=[ft.dropdown.Option("简化"), ft.dropdown.Option("开启"), ft.dropdown.Option("关闭")],
-            value="简化",
-            helper_text="开局选择。关闭后不会推进周期，也不会触发生理期事件；少女心事仍作为隐藏系统存在。",
+        self.page.padding = 0
+        self.page.bgcolor = ft.Colors.WHITE
+
+        identity = self.character_select_dropdown(
+            "身份来源",
+            "素人学生被星探发现",
+            ["素人学生被星探发现", "舞蹈学院学生", "海外练习生", "童星转型", "选秀遗珠", "地下舞者", "网红转练习生"],
+            width=330,
         )
-        status = ft.Text("", color=ft.Colors.RED)
+        timeline = self.character_select_dropdown(
+            "时间线",
+            "练习生阶段",
+            ["练习生阶段", "出道准备期", "已出道新人"],
+            width=300,
+        )
+        nationality = self.character_select_dropdown(
+            "国籍",
+            "中国",
+            ["中国", "韩国", "日本", "泰国", "美国华裔", "加拿大华裔", "澳大利亚华裔", "新加坡", "越南", "菲律宾", "马来西亚"],
+            width=260,
+        )
+        mbti = self.character_select_dropdown(
+            "MBTI",
+            "INFP",
+            ["INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"],
+            width=220,
+        )
+        period_mode = self.character_select_dropdown(
+            "生理周期系统",
+            "简化",
+            ["关闭", "简化", "极致"],
+            width=220,
+        )
+
+        manual_field_names = ["艺名", "本名", "年龄", "身高"]
+        ai_field_names = [
+            "外貌风格", "性格", "爱好", "特长", "弱项", "家庭状况", "练习生经历",
+            "在团定位", "你希望观众记住你的什么", "其他补充",
+        ]
+
+        fields: Dict[str, ft.TextField] = {}
+        for name in manual_field_names + ai_field_names:
+            label = "身高（cm）" if name == "身高" else name
+            multiline = name in {"外貌风格", "性格", "家庭状况", "练习生经历", "你希望观众记住你的什么", "其他补充"}
+            fields[name] = ft.TextField(
+                label=label,
+                width=330,
+                multiline=multiline,
+                min_lines=1,
+                max_lines=3 if multiline else 1,
+                **self.character_form_field_style(),
+            )
+
+        boundary_field = ft.TextField(
+            label="",
+            width=640,
+            multiline=True,
+            min_lines=4,
+            max_lines=4,
+            hint_text="这里由玩家自己填写，例如：不写极端暴力、强制亲密、未成年露骨恋爱、不可逆重大身体伤害等。",
+            **self.character_form_field_style(),
+        )
+        boundary_field.disabled = True
+
+        source_tags_cache: Dict[str, Any] = {"tags": [], "notes": []}
+        generation_state: Dict[str, Any] = {"ready": False, "generating": False}
+        status = ft.Text("", color=C["dai"], size=self.ui_size(12), font_family=FONT_CN, selectable=True)
+
+        result_hint = ft.Text(
+            "先填写基础档案，点击“确认基础档案并生成角色”。系统会在后台做重名校验，然后自动调用模型生成外貌风格、性格背景、标签和基础数值倾向。",
+            size=self.ui_size(12),
+            color=C["sub"],
+            font_family=FONT_CN,
+            selectable=True,
+        )
+        result_progress = ft.ProgressRing(width=28, height=28, stroke_width=3, visible=False)
+
+        def set_ai_fields_disabled(disabled: bool):
+            for key in ai_field_names:
+                fields[key].disabled = disabled
+
+        set_ai_fields_disabled(True)
+
+        def clear_ai_cache():
+            source_tags_cache["tags"] = []
+            source_tags_cache["notes"] = []
+            generation_state["ready"] = False
+            for key in ai_field_names:
+                fields[key].value = ""
+                fields[key].disabled = True
+            boundary_field.value = ""
+            boundary_field.disabled = True
+            hide_generated_result_containers()
+            result_hint.value = "基础档案已变化。请重新点击“确认基础档案并生成角色”。"
+            result_hint.color = C["sub"]
+
+        def collect_basic() -> Dict[str, Any]:
+            data: Dict[str, Any] = {
+                "身份": identity.value,
+                "时间线": timeline.value,
+                "国籍": nationality.value,
+                "MBTI": mbti.value,
+                "MBTI人格倾向": self.mbti_profile(mbti.value),
+                "生理周期系统": period_mode.value,
+            }
+            for k in manual_field_names:
+                data[k] = fields[k].value or ""
+            return data
+
+        def collect_full_character() -> Dict[str, Any]:
+            data = collect_basic()
+            for k in ai_field_names:
+                data[k] = fields[k].value or ""
+            data["你不希望剧情触碰的内容"] = boundary_field.value or ""
+            if source_tags_cache["tags"]:
+                data["出身来源标签"] = list(source_tags_cache["tags"])
+            else:
+                data["出身来源标签"] = self.infer_source_tags(data)
+            if source_tags_cache["notes"]:
+                data["基础数值倾向"] = list(source_tags_cache["notes"])
+            return data
+
+        def mark_basic_changed(e=None):
+            clear_ai_cache()
+            status.color = C["dai"]
+            status.value = "基础档案已更新，需要重新生成AI匹配结果。"
+            self.page.update()
+
+        for ctrl in [identity, timeline, nationality, mbti, period_mode]:
+            ctrl.on_change = mark_basic_changed
 
         def randomize_names(e=None):
-            names = self.random_character_names(fields["国籍"].value)
+            names = self.random_character_names(nationality.value)
             fields["艺名"].value = names["艺名"]
             fields["本名"].value = names["本名"]
-            status.color = C["dai"]
-            status.value = f"已随机生成：艺名 {names['艺名']} / 本名 {names['本名']}。"
-            self.page.update()
+            mark_basic_changed()
 
-        def randomize_art_name(e=None):
-            names = self.random_character_names(fields["国籍"].value)
+        def randomize_mbti(e=None):
+            import random
+            mbti.value = random.choice(["INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"])
+            mark_basic_changed()
+
+        def randomize_manual_field(key: str):
+            def handler(e=None):
+                if key in {"艺名", "本名"}:
+                    randomize_names(e)
+                else:
+                    fields[key].value = self.random_character_field_value(key, nationality.value)
+                    mark_basic_changed()
+            return handler
+
+        def randomize_basic(e=None):
+            import random
+            nationality.value = self.random_character_field_value("国籍", nationality.value)
+            names = self.random_character_names(nationality.value)
             fields["艺名"].value = names["艺名"]
-            status.color = C["dai"]
-            status.value = f"已随机生成艺名：{names['艺名']}。"
+            fields["本名"].value = names["本名"]
+            fields["年龄"].value = self.random_character_field_value("年龄", nationality.value)
+            fields["身高"].value = self.random_character_field_value("身高", nationality.value)
+            mbti.value = random.choice(["INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"])
+            clear_ai_cache()
+            status.color = C["jade"]
+            status.value = "已随机生成基础档案。点击“确认基础档案并生成角色”后，系统会自动生成AI匹配结果。"
             self.page.update()
 
-        def check_duplicate(e=None):
-            raw_character: Dict[str, Any] = {"身份": identity.value, "出身来源标签": [s.strip() for s in (source_tags.value or "").split(",") if s.strip()], "时间线": timeline.value, "生理周期系统": period_mode.value}
-            for k, field in fields.items():
-                raw_character[k] = field.value or ""
-            raw_character["艺名"] = str(raw_character.get("艺名") or "").strip()
-            raw_character["本名"] = str(raw_character.get("本名") or "").strip()
-            errors = self.validate_character_name_unique(raw_character)
-            if errors:
-                status.color = ft.Colors.RED
-                status.value = "重名校验未通过：\n" + "\n".join(f"• {x}" for x in errors)
-            else:
-                status.color = C["jade"]
-                status.value = f"重名校验通过。存档将命名为：{self.character_save_name(raw_character)}"
+        def apply_ai_match(match: Dict[str, Any]):
+            for key in ai_field_names:
+                if key in fields:
+                    fields[key].disabled = False
+                    fields[key].value = str(match.get(key) or "")
+            boundary_field.disabled = False
+            show_generated_result_containers()
+            source_tags_cache["tags"] = list(match.get("出身来源标签") or [])
+            source_tags_cache["notes"] = list(match.get("基础数值倾向") or [])
+            generation_state["ready"] = True
+            generation_state["generating"] = False
+            result_progress.visible = False
+            tags = "、".join(source_tags_cache["tags"]) or "待创建时自动推断"
+            notes = "、".join(source_tags_cache["notes"]) or "由标签进入初始分配器"
+            result_hint.color = C["jade"]
+            result_hint.value = f"AI生成完成。觉得不合理可以直接微调下面的文本框；剧情边界需要玩家自己填写，AI不会替你决定不能触碰什么。\n自动标签：{tags}\n基础数值倾向：{notes}"
+            status.color = C["jade"]
+            status.value = "角色设定已生成，可以微调后创建角色。"
             self.page.update()
+
+        def confirm_basic_and_generate(e=None):
+            if generation_state.get("generating"):
+                return
+
+            basic = collect_basic()
+            field_errors = self.validate_character_numeric_fields(dict(basic))
+            duplicate_errors = self.validate_character_name_unique(basic)
+            if field_errors or duplicate_errors:
+                status.color = ft.Colors.RED
+                status.value = "基础档案未通过校验：\n" + "\n".join(f"• {x}" for x in field_errors + duplicate_errors)
+                result_hint.color = ft.Colors.RED
+                result_hint.value = "请先修正基础档案。重名、年龄、身高校验会在后台自动完成，不需要单独点击校验按钮。"
+                self.page.update()
+                return
+
+            generation_state["generating"] = True
+            generation_state["ready"] = False
+            result_progress.visible = True
+            set_ai_fields_disabled(True)
+            result_hint.color = C["dai"]
+            result_hint.value = "正在生成角色中……系统正在根据基础档案、MBTI、国籍、年龄和身高匹配外貌风格、性格背景、标签与基础数值倾向。"
+            status.color = C["dai"]
+            status.value = "生成角色中，请稍等。"
+            self.page.update()
+
+            def worker():
+                try:
+                    match = self.generate_character_match_with_llm(basic)
+                except Exception as exc:
+                    logger.exception("AI character matching failed")
+                    match = self.fallback_ai_character_match(basic)
+                    match["其他补充"] = (match.get("其他补充", "") + f"\n模型匹配失败，已使用本地规则兜底：{exc}")[:380]
+                apply_ai_match(match)
+
+            threading.Thread(target=worker, daemon=True).start()
 
         def create(e):
-            raw_character: Dict[str, Any] = {"身份": identity.value, "出身来源标签": [s.strip() for s in (source_tags.value or "").split(",") if s.strip()], "时间线": timeline.value, "生理周期系统": period_mode.value}
-            for k, field in fields.items():
-                raw_character[k] = field.value or ""
+            if generation_state.get("generating"):
+                status.color = C["dai"]
+                status.value = "正在生成角色中，请等待生成完成。"
+                self.page.update()
+                return
+            if not generation_state.get("ready"):
+                status.color = ft.Colors.RED
+                status.value = "请先点击“确认基础档案并生成角色”，生成AI设定后再创建。"
+                self.page.update()
+                return
+
+            raw_character = collect_full_character()
             raw_character["艺名"] = str(raw_character.get("艺名") or "").strip()
             raw_character["本名"] = str(raw_character.get("本名") or "").strip()
             raw_character["国籍"] = str(raw_character.get("国籍") or "").strip()
+
+            field_errors = self.validate_character_numeric_fields(raw_character)
+            duplicate_errors = self.validate_character_name_unique(raw_character)
+            if not raw_character.get("出身来源标签"):
+                raw_character["出身来源标签"] = self.infer_source_tags(raw_character)
+
+            if field_errors or duplicate_errors:
+                status.color = ft.Colors.RED
+                status.value = "角色创建信息有误：\n" + "\n".join(f"• {x}" for x in field_errors + duplicate_errors)
+                self.page.update()
+                return
+
             try:
                 normalized = validate_character_input(raw_character)
             except CharacterValidationError as exc:
@@ -1592,22 +2656,14 @@ class KpopApp:
                 self.page.update()
                 return
 
-            normalized.data["艺名"] = str(normalized.data.get("艺名") or "").strip()
-            normalized.data["本名"] = str(normalized.data.get("本名") or "").strip()
-            duplicate_errors = self.validate_character_name_unique(normalized.data)
-            if duplicate_errors:
-                status.color = ft.Colors.RED
-                status.value = "重名校验未通过：\n" + "\n".join(f"• {e}" for e in duplicate_errors)
-                self.page.update()
-                return
+            if str(raw_character.get("身高") or "").strip():
+                normalized.data["身高"] = raw_character["身高"]
 
-            if normalized.warnings:
-                status.color = ft.Colors.ORANGE
-                status.value = "提示：\n" + "\n".join(f"• {w}" for w in normalized.warnings)
-                self.page.update()
-
-            # 为新角色随机分配一个内置头像。头像文件会随完整包放在 assets/avatars/。
             normalized.data["avatar"] = self.random_avatar_path()
+            normalized.data["出身来源标签"] = raw_character.get("出身来源标签", [])
+            normalized.data["基础数值倾向"] = raw_character.get("基础数值倾向", [])
+            normalized.data["MBTI"] = raw_character.get("MBTI")
+            normalized.data["MBTI人格倾向"] = raw_character.get("MBTI人格倾向")
             engine = TurnEngine(self.storage, self.config)
             state = engine.create_initial_state(normalized.data)
             state.save_name = self.character_save_name(normalized.data)
@@ -1615,68 +2671,245 @@ class KpopApp:
             self.state = state
             self.show_game(initial=True)
 
-        period_card = ft.Container(
-            padding=ft.Padding(left=16, right=16, top=12, bottom=12),
-            border_radius=18,
-            bgcolor=ft.Colors.with_opacity(0.70, ft.Colors.WHITE),
-            border=ft.Border.all(1, ft.Colors.with_opacity(0.55, C["lotus"])),
-            content=ft.Column([
-                ft.Text("身体系统设置", size=14, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
-                period_mode,
-                ft.Text("这项只在角色创建时决定。想要完全不出现生理期，就选“关闭”。", size=12, color=C["sub"], font_family=FONT_CN),
-            ], spacing=8),
-        )
-        name_tools = ft.Row([
-            ft.Container(
-                padding=ft.Padding(left=14, right=14, top=8, bottom=8),
-                border_radius=18,
-                bgcolor=ft.Colors.with_opacity(0.82, C["lotus"]),
-                ink=True,
-                on_click=randomize_names,
-                content=ft.Row([icon_image("new_character", 18), ft.Text("随机姓名 / 艺名", size=12, color=C["ink"], font_family=FONT_CN, weight=ft.FontWeight.W_600)], spacing=6),
-            ),
-            ft.Container(
-                padding=ft.Padding(left=14, right=14, top=8, bottom=8),
-                border_radius=18,
-                bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE),
-                border=ft.Border.all(1, ft.Colors.with_opacity(0.52, C["line"])),
-                ink=True,
-                on_click=randomize_art_name,
-                content=ft.Row([icon_image("stage", 18), ft.Text("只随机艺名", size=12, color=C["dai"], font_family=FONT_CN, weight=ft.FontWeight.W_600)], spacing=6),
-            ),
-            ft.Container(
-                padding=ft.Padding(left=14, right=14, top=8, bottom=8),
-                border_radius=18,
-                bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE),
-                border=ft.Border.all(1, ft.Colors.with_opacity(0.52, C["line"])),
-                ink=True,
-                on_click=check_duplicate,
-                content=ft.Row([icon_image("save_archive", 18), ft.Text("检查重名", size=12, color=C["dai"], font_family=FONT_CN, weight=ft.FontWeight.W_600)], spacing=6),
-            ),
-        ], spacing=10, wrap=True)
+        def manual_field_row(name: str):
+            return ft.Row([
+                fields[name],
+                self.dice_button(randomize_manual_field(name), f"随机生成{name}"),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
-        form = ft.Column([
-            ft.Text("🎤 角色创建", size=28, weight=ft.FontWeight.BOLD, font_family=FONT_CN, color=C["ink"]),
-            ft.Text("存档会优先使用艺名命名；没有艺名时使用本名。创建前会校验重名。", size=12, color=C["sub"], font_family=FONT_CN),
-            name_tools,
-            identity, source_tags, timeline, period_card, ft.Divider()
-        ], spacing=10, scroll=ft.ScrollMode.AUTO)
-        left, right = ft.Column(spacing=8), ft.Column(spacing=8)
-        for i, label in enumerate(labels):
-            (left if i % 2 == 0 else right).controls.append(fields[label])
-        form.controls.append(ft.Row([left, right], spacing=24, vertical_alignment=ft.CrossAxisAlignment.START))
-        form.controls.extend([ft.Row([ft.ElevatedButton("创建角色", icon=icon("PLAY_ARROW"), on_click=create), ft.OutlinedButton("返回首页", on_click=lambda e: self.show_home())]), status])
-        self.page.add(ft.Container(content=form, padding=24, expand=True))
+        def generated_card(name: str, icon_name: str = "stage", width: int = 430, lines: int = 4):
+            return self.generated_result_field_card(name, fields[name], icon_name=icon_name, width=width, lines=lines)
+
+        boundary_container = self.generated_result_field_card(
+            "剧情边界（你不希望触碰的内容）",
+            boundary_field,
+            icon_name="safety",
+            width=640,
+            lines=4,
+        )
+        boundary_container.visible = False
+
+        generated_result_containers: list = []
+
+        def hide_generated_result_containers():
+            for item in generated_result_containers:
+                try:
+                    item.visible = False
+                except Exception:
+                    pass
+            boundary_container.visible = False
+
+        def show_generated_result_containers():
+            for item in generated_result_containers:
+                try:
+                    item.visible = True
+                except Exception:
+                    pass
+            boundary_container.visible = True
+
+        def input_type_chip(text: str, color: str):
+            return ft.Container(
+                padding=ft.Padding(left=10, right=10, top=5, bottom=5),
+                border_radius=16,
+                bgcolor=ft.Colors.with_opacity(0.30, color),
+                content=ft.Text(text, size=self.ui_size(10), color=C["ink"], font_family=FONT_CN, weight=ft.FontWeight.W_600),
+            )
+
+        def section_card(title: str, subtitle: str, icon_name: str, controls: list, expand: bool = True):
+            return ft.Container(
+                expand=expand,
+                padding=20,
+                border_radius=28,
+                bgcolor=ft.Colors.with_opacity(0.82, ft.Colors.WHITE),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.70, ft.Colors.WHITE)),
+                shadow=ft.BoxShadow(blur_radius=26, color=ft.Colors.with_opacity(0.10, C["dai"]), offset=ft.Offset(0, 9)),
+                content=ft.Column([
+                    ft.Row([
+                        ft.Container(icon_image(icon_name, 24, 0.92), width=38, height=38, border_radius=19, bgcolor=ft.Colors.with_opacity(0.34, C["lotus"]), alignment=ft.Alignment.CENTER),
+                        ft.Column([
+                            ft.Text(title, size=self.ui_size(17), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                            ft.Text(subtitle, size=self.ui_size(11), color=C["sub"], font_family=FONT_CN),
+                        ], spacing=1, expand=True),
+                    ], spacing=10),
+                    *controls,
+                ], spacing=12),
+            )
+
+        action_bar = ft.Container(
+            width=360,
+            padding=ft.Padding(left=16, right=16, top=16, bottom=16),
+            border_radius=26,
+            bgcolor=ft.Colors.with_opacity(0.58, ft.Colors.WHITE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.44, C["line"])),
+            shadow=ft.BoxShadow(
+                blur_radius=18,
+                spread_radius=0,
+                color=ft.Colors.with_opacity(0.08, C["dai"]),
+                offset=ft.Offset(0, 6),
+            ),
+            content=ft.Column([
+                ft.Text(
+                    "基础档案确认",
+                    size=self.ui_size(13),
+                    color=C["ink"],
+                    weight=ft.FontWeight.W_700,
+                    font_family=FONT_CN,
+                ),
+                ft.Text(
+                    "系统会自动校验重名、年龄和身高；通过后生成AI设定。",
+                    size=self.ui_size(11),
+                    color=C["sub"],
+                    font_family=FONT_CN,
+                ),
+                ft.Row([
+                    ft.Container(
+                        expand=True,
+                        padding=ft.Padding(left=14, right=14, top=10, bottom=10),
+                        border_radius=20,
+                        bgcolor=ft.Colors.with_opacity(0.84, C["lotus"]),
+                        ink=True,
+                        on_click=randomize_basic,
+                        content=ft.Row([icon_image("dice", 18), ft.Text("随机", size=self.ui_size(12), color=C["ink"], weight=ft.FontWeight.W_700, font_family=FONT_CN)], spacing=7, alignment=ft.MainAxisAlignment.CENTER),
+                    ),
+                    ft.Container(
+                        expand=True,
+                        padding=ft.Padding(left=14, right=14, top=10, bottom=10),
+                        border_radius=20,
+                        bgcolor=ft.Colors.with_opacity(0.88, C["jade"]),
+                        ink=True,
+                        on_click=confirm_basic_and_generate,
+                        content=ft.Row([icon_image("api", 18), ft.Text("确认生成", size=self.ui_size(12), color=C["ink"], weight=ft.FontWeight.W_700, font_family=FONT_CN)], spacing=7, alignment=ft.MainAxisAlignment.CENTER),
+                    ),
+                ], spacing=10),
+            ], spacing=9),
+        )
+
+        basic_card = section_card(
+            "基础档案",
+            "先输入基础档案和 MBTI，再让模型自动生成性格背景与数值标签。",
+            "new_character",
+            [
+                ft.Row([
+                    input_type_chip("选项：身份 / 时间线 / 国籍 / MBTI / 生理周期", C["jade"]),
+                    input_type_chip("手动：艺名 / 本名 / 年龄 / 身高", C["lotus"]),
+                    input_type_chip("自动：重名校验 / AI生成 / 标签 / 数值倾向", C["apricot"]),
+                ], spacing=8, wrap=True),
+                ft.Text("先确定选项和手动字段。点击确认后，系统会自动校验重名、年龄和身高；校验通过后才会进入AI生成。", size=self.ui_size(11), color=C["sub"], font_family=FONT_CN),
+                ft.Row([identity, timeline, nationality, mbti, self.dice_button(randomize_mbti, "随机MBTI"), period_mode, self.period_intro_button()], spacing=10, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Row([
+                    ft.Column([
+                        ft.Row([manual_field_row("艺名"), manual_field_row("本名")], spacing=14, wrap=True),
+                        ft.Row([manual_field_row("年龄"), manual_field_row("身高")], spacing=14, wrap=True),
+                    ], spacing=10, expand=True),
+                    action_bar,
+                ], spacing=18, vertical_alignment=ft.CrossAxisAlignment.START),
+            ],
+            expand=False,
+        )
+
+        result_row_1 = self.generated_result_row([
+            generated_card("外貌风格", "new_character", 430, 4),
+            generated_card("性格", "diary", 430, 4),
+            generated_card("在团定位", "stage", 430, 4),
+        ])
+        result_row_2 = self.generated_result_row([
+            generated_card("特长", "stage", 430, 3),
+            generated_card("弱项", "health", 430, 3),
+            generated_card("爱好", "schedule", 430, 3),
+        ])
+        result_row_3 = self.generated_result_row([
+            generated_card("家庭状况", "family", 640, 4),
+            generated_card("练习生经历", "contract", 640, 4),
+        ])
+        result_row_4 = self.generated_result_row([
+            generated_card("你希望观众记住你的什么", "fans", 640, 4),
+            boundary_container,
+        ])
+        result_row_5 = self.generated_result_row([
+            generated_card("其他补充", "diary", 1296, 4),
+        ])
+        generated_result_containers.extend([result_row_1, result_row_2, result_row_3, result_row_4, result_row_5])
+        hide_generated_result_containers()
+
+        create_button_row = ft.Row([
+            ft.Container(
+                padding=ft.Padding(left=18, right=18, top=10, bottom=10),
+                border_radius=22,
+                bgcolor=ft.Colors.with_opacity(0.86, C["jade"]),
+                ink=True,
+                on_click=create,
+                content=ft.Text("创建角色", size=self.ui_size(13), color=C["ink"], font_family=FONT_CN, weight=ft.FontWeight.W_700),
+            ),
+            ft.Container(
+                padding=ft.Padding(left=18, right=18, top=10, bottom=10),
+                border_radius=22,
+                bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.52, C["line"])),
+                ink=True,
+                on_click=lambda e: self.show_home(),
+                content=ft.Text("返回首页", size=self.ui_size(13), color=C["dai"], font_family=FONT_CN, weight=ft.FontWeight.W_700),
+            ),
+        ], spacing=10)
+
+        ai_card = section_card(
+            "AI生成结果",
+            "AI生成项会显示在这里；剧情边界由玩家自己填写。觉得不合理可以微调后再创建角色。",
+            "stage",
+            [
+                ft.Container(
+                    padding=ft.Padding(left=14, right=14, top=12, bottom=12),
+                    border_radius=20,
+                    bgcolor=ft.Colors.with_opacity(0.54, ft.Colors.WHITE),
+                    border=ft.Border.all(1, ft.Colors.with_opacity(0.42, C["line"])),
+                    content=ft.Row([result_progress, result_hint], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ),
+                result_row_1,
+                result_row_2,
+                result_row_3,
+                result_row_4,
+                result_row_5,
+                status,
+                create_button_row,
+            ],
+            expand=False,
+        )
+
+        header = ft.Container(
+            padding=ft.Padding(left=30, right=30, top=18, bottom=12),
+            content=ft.Row([
+                ft.Container(icon_image("new_character", 30, 0.95), width=46, height=46, border_radius=18, bgcolor=ft.Colors.with_opacity(0.45, C["lotus"]), alignment=ft.Alignment.CENTER),
+                ft.Column([
+                    ft.Text("角色创建", size=self.ui_size(26), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                    ft.Text("基础数据确认后自动校验并生成AI设定；生成结果可以微调。", size=self.ui_size(12), color=C["sub"], font_family=FONT_CN),
+                ], spacing=1),
+                ft.Container(expand=True),
+                ft.Container(
+                    padding=ft.Padding(left=14, right=14, top=8, bottom=8),
+                    border_radius=20,
+                    bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE),
+                    border=ft.Border.all(1, ft.Colors.with_opacity(0.58, C["line"])),
+                    ink=True,
+                    on_click=lambda e: self.show_home(),
+                    content=ft.Row([icon_image("app_logo", 18), ft.Text("返回首页", size=self.ui_size(12), color=C["dai"], font_family=FONT_CN, weight=ft.FontWeight.W_700)], spacing=7),
+                ),
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        )
+
+        content = ft.Column([
+            header,
+            ft.Container(
+                expand=True,
+                padding=ft.Padding(left=28, right=28, top=10, bottom=28),
+                content=ft.Column([
+                    basic_card,
+                    ai_card,
+                ], spacing=18, expand=True, scroll=ft.ScrollMode.AUTO, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            ),
+        ], expand=True)
+
+        self.page.add(ft.Stack([self.character_create_bg(), content], expand=True))
         self.page.update()
 
-    def load_latest(self) -> None:
-        save_id = self.storage.latest_save_id()
-        if save_id is None:
-            self.show_home()
-            return
-        self.save_id = save_id
-        self.state = self.storage.load_save(save_id)
-        self.show_game()
 
     def show_save_list(self) -> None:
         self.clear()
@@ -1912,6 +3145,8 @@ class KpopApp:
         age = ch.get("年龄", "未知")
         nationality = str(ch.get("国籍") or "未填写")
         identity = str(ch.get("身份") or "练习生")
+        mbti = str(ch.get("MBTI") or "未设定")
+        group_name = self.display_group_name(s)
         mainline = str(s.current_mainline or "日常推进")
         exam_countdown = "考核未知"
         try:
@@ -1958,9 +3193,11 @@ class KpopApp:
                         ft.Text(art_name, size=16, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN, max_lines=1),
                         self.mini_chip(f"{nationality}", C["jade"]),
                         self.mini_chip(f"{age}岁", C["lotus"]),
+                        self.mini_chip(group_name, C["apricot"]),
+                        self.mini_chip(mbti, C["lavender"]),
                     ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     ft.Text(
-                        f"{real_name + ' · ' if real_name and real_name != art_name else ''}{identity}",
+                        f"{real_name + ' · ' if real_name and real_name != art_name else ''}{identity} · {group_name} · {mbti}",
                         size=11,
                         color=C["sub"],
                         font_family=FONT_CN,
@@ -2631,9 +3868,9 @@ class KpopApp:
         )
 
         main_row = ft.Row([
-            self.soft_card(self.left_panel, padding=14, radius=26, bgcolor=ft.Colors.with_opacity(0.72, ft.Colors.WHITE), width=322),
+            self.soft_card(self.left_panel, padding=14, radius=26, bgcolor=ft.Colors.with_opacity(0.72, ft.Colors.WHITE), width=336),
             ft.Container(content=self.story_view, expand=True, padding=ft.Padding(left=10, right=10, top=4, bottom=4)),
-            self.soft_card(self.right_panel, padding=14, radius=26, bgcolor=ft.Colors.with_opacity(0.72, ft.Colors.WHITE), width=342),
+            self.soft_card(self.right_panel, padding=14, radius=26, bgcolor=ft.Colors.with_opacity(0.72, ft.Colors.WHITE), width=336),
         ], expand=True, spacing=14, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
 
         bottom = self.soft_card(self.choice_row, padding=14, radius=24, bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE))
@@ -2771,15 +4008,22 @@ class KpopApp:
             self.metric_bar("礼仪压力", s.hierarchy.get("etiquette_pressure"), "hierarchy", C["rouge"], danger_high=True),
         ]
 
+        life_context_children = [
+            ft.Text("生理周期", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+            *period_children,
+            ft.Divider(color=ft.Colors.with_opacity(0.28, C["line"])),
+            ft.Text("社会环境", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+            *social_children,
+        ]
+
         self.left_panel.controls.extend([
-            self.foldout_section("overview", "new_character", "角色总览", f"{s.character.get('艺名') or s.save_name} · {s.current_mainline}", overview_children, True),
+            self.foldout_section("overview", "new_character", "角色总览", f"{s.character.get('艺名') or s.save_name} · {self.display_group_name(s)}", overview_children, True),
             self.foldout_section("schedule_profile", "schedule", "阶段日程", f"{schedule_profile.get('stage_mode', 'trainee')} / 训练缺口 {schedule_profile.get('practice_quota_need', 0)}", schedule_children, False),
             self.foldout_section("body", "health", "身体状态", f"体力 {body.get('体力')} / 伤病 {body.get('伤病风险')} / 嗓音 {body.get('嗓音状态')}", body_children, True),
             self.foldout_section("mind", "diary", "心理状态", f"心情 {mind.get('心情')} / 压力 {mind.get('精神压力')} / 孤独 {mind.get('孤独感')}", mind_children, True),
             self.foldout_section("career", "stage", "职业属性", f"舞 {career.get('舞蹈实力')} / 声 {career.get('声乐实力')} / 创作 {career.get('创作能力')}", career_children, False),
             self.foldout_section("talents", "app_logo", "天赋与能力", f"能力 {len(abilities)} 个 / 抗压天赋 {talents.get('抗压天赋')}", talent_children, False),
-            self.foldout_section("period", "period", "生理周期", period_summary, period_children, False),
-            self.foldout_section("social_env", "school", "社会环境", f"语言压力 {s.social_context.get('language_barrier')} / 家庭冲突 {s.family.get('conflict_level')}", social_children, False),
+            self.foldout_section("life_context", "period", "生理周期 / 社会环境", f"{period_summary} / 语言压力 {s.social_context.get('language_barrier')}", life_context_children, False),
         ])
 
         company_children = [
@@ -2828,21 +4072,29 @@ class KpopApp:
             ft.Text(relationship_ui_summary(name, rel, s), size=11, color=C["sub"], font_family=FONT_CN)
             for name, rel in list(s.relationships.items())[:12]
         ] or [ft.Text("暂无关系记录", size=12, color=C["sub"], font_family=FONT_CN)]
-        crisis_children = []
+
         debut = getattr(s, "debut", {}) or {}
         ending = getattr(s, "ending", {}) or {}
-        crisis_children.append(ft.Text("出道 / 结局窗口", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN))
-        crisis_children.append(self.text_line("出道可能性", f"{debut.get('readiness', 0)} / 概率 {debut.get('probability', 0)}%", "stage", C["lavender"]))
-        crisis_children.append(self.text_line("出道动向", self.player_debut_status(debut), "stage", C["apricot"]))
         top_ending = (ending.get("candidate_endings") or [{}])[0] if isinstance(ending.get("candidate_endings"), list) and ending.get("candidate_endings") else {}
-        crisis_children.append(self.text_line("未来方向", self.player_ending_status(ending, top_ending), "contract", C["jade"]))
-        crisis_children.append(ft.Divider(color=ft.Colors.with_opacity(0.35, C["line"])))
+        debut_ending_children = [
+            self.text_line("组合名", self.display_group_name(s), "stage", C["apricot"]),
+            self.text_line("出道可能性", f"{debut.get('readiness', 0)} / 概率 {debut.get('probability', 0)}%", "stage", C["lavender"]),
+            self.text_line("出道动向", self.player_debut_status(debut), "stage", C["apricot"]),
+            self.text_line("窗口倒计时", f"{debut.get('window_turns_left', 0)} 回合", "schedule", C["jade"]),
+            self.text_line("候选尝试", debut.get("candidate_attempts", 0), "contract", C["lotus"]),
+            self.text_line("最近结果", debut.get("last_result") or "暂无", "diary", C["dai"]),
+            ft.Divider(color=ft.Colors.with_opacity(0.35, C["line"])),
+            self.text_line("结局窗口", ending.get("window") or ending.get("status") or "closed", "contract", C["jade"]),
+            self.text_line("未来方向", self.player_ending_status(ending, top_ending), "contract", C["jade"]),
+        ]
 
+        crisis_children = []
         if route:
             crisis_children.append(self.text_line("服务商", self.config.provider_label(), "api", C["jade"]))
             crisis_children.append(self.text_line("叙事模式", self.config.model_policy, "api", C["jade"]))
             crisis_children.append(self.text_line("当前线路", route.actual_model, "api", C["lotus"]))
             crisis_children.append(self.text_line("最近状态", route.turn_kind, "schedule", C["apricot"]))
+            crisis_children.append(ft.Divider(color=ft.Colors.with_opacity(0.35, C["line"])))
         active_crises = [c for c in (getattr(s, "active_crises", []) or []) if getattr(c, "stage", "") not in {"closed", "converted"}]
         if active_crises:
             for c in active_crises:
@@ -2864,6 +4116,7 @@ class KpopApp:
             self.foldout_section("risks", "safety", "风险系统", f"恋爱 {risks.get('恋爱风险')} / 私生 {risks.get('私生风险')} / 公关 {risks.get('公关危机风险')}", risk_children, True),
             self.foldout_section("relationships", "romance", "关系状态", f"记录 {len(s.relationships)} 人 / 工作人员不进入 CP", relationship_children, False),
             self.foldout_section("crisis_flags", "crisis_pr", "危机与长期记录", f"活跃危机 {len(active_crises)} / Flag {len(getattr(s, 'flags', []) or [])}", crisis_children, True),
+            self.foldout_section("debut_ending", "stage", "出道 / 结局进度", f"{self.display_group_name(s)} / 准备 {debut.get('readiness', 0)} / {self.player_ending_status(ending, top_ending)}", debut_ending_children, True),
         ])
 
     def choice_card(self, choice: Choice):

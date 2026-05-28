@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
+import re
 
 from core.models import GameState
 from core.talents import generate_talents
@@ -23,6 +24,13 @@ def add(d: Dict[str, int], key: str, delta: int, log: List[str], reason: str, ca
         log.append(f"{key}: {old} → {d[key]}（{reason}）")
 
 
+def mbti_letters(character: Dict[str, Any]) -> tuple[str, str, str, str, str]:
+    code = str(character.get("MBTI") or "").upper().strip()
+    if not re.match(r"^[IE][NS][TF][JP]$", code):
+        code = "INFP"
+    return code, code[0], code[1], code[2], code[3]
+
+
 def parse_profile_tags(character: Dict[str, Any]) -> List[str]:
     tags: List[str] = []
     identity = str(character.get("身份", ""))
@@ -31,6 +39,8 @@ def parse_profile_tags(character: Dict[str, Any]) -> List[str]:
     weakness = str(character.get("弱项", ""))
     exp = str(character.get("练习生经历", ""))
     family = str(character.get("家庭状况", ""))
+    mbti_code, mbti_e, mbti_p, mbti_j, mbti_l = mbti_letters(character)
+    tags.extend([f"MBTI:{mbti_code}", f"MBTI-{mbti_e}", f"MBTI-{mbti_p}", f"MBTI-{mbti_j}", f"MBTI-{mbti_l}"])
 
     if "运动员" in identity or any("运动员" in str(t) for t in source_tags):
         tags.append("前运动员")
@@ -66,6 +76,12 @@ def parse_profile_tags(character: Dict[str, Any]) -> List[str]:
         tags.append("舞蹈短板")
     if family:
         tags.append("家庭背景已设定")
+
+    # AI/规则匹配标签直接进入 profile_tags，供初始数值分配使用。
+    for t in source_tags:
+        text = str(t).strip()
+        if text:
+            tags.append(text)
 
     # 去重保持顺序
     out = []
@@ -149,6 +165,54 @@ def allocate_initial_state(state: GameState, character: Dict[str, Any]) -> None:
         log.append("续约前一年：职业属性按成熟爱豆初始化。")
         career_cap = 80
 
+    # MBTI-based small initial biases. MBTI is a game control variable, not a diagnosis.
+    mbti_code, mbti_e, mbti_p, mbti_j, mbti_l = mbti_letters(character)
+    state.character["MBTI"] = mbti_code
+    state.character.setdefault("MBTI说明", "MBTI只影响叙事倾向和小幅初始数值，不决定角色命运。")
+    log.append(f"MBTI {mbti_code}：作为叙事控制变量进入初始分配。")
+
+    if mbti_e == "E":
+        add(state.career, "综艺感", 3, log, "E型更主动表达和接梗", min(career_cap, 13 if "练习生" in timeline else career_cap))
+        state.team["团队默契"] += 2
+        state.risks["公关危机风险"] += 1
+        log.append("E型：团队互动更主动，镜头暴露和公关风险轻微上升。")
+    else:
+        add(state.career, "创作能力", 2, log, "I型更容易沉淀内心素材", min(career_cap, 10 if "练习生" in timeline else career_cap))
+        state.mind["孤独感"] += 4
+        state.inner_life["日记倾向"] += 6
+        log.append("I型：内心戏和日记倾向更强，孤独感轻微上升。")
+
+    if mbti_p == "N":
+        add(state.career, "创作能力", 3, log, "N型更重视概念理解和表达", min(career_cap, 12 if "练习生" in timeline else career_cap))
+        add(state.career, "舞台感染力", 2, log, "N型更容易理解舞台叙事", min(career_cap, 13 if "练习生" in timeline else career_cap))
+        state.mind["精神压力"] += 2
+        log.append("N型：概念消化和舞台表达更强，但更容易想太多。")
+    else:
+        add(state.career, "舞蹈实力", 2, log, "S型更重视动作复现和细节执行", min(career_cap, 13 if "练习生" in timeline else career_cap))
+        state.company["公司信任度"] += 2
+        log.append("S型：训练执行稳定，公司信任轻微上升。")
+
+    if mbti_j == "F":
+        state.team["队内信任度"] += 3
+        state.mind["精神压力"] += 3
+        state.inner_life["心事重量"] += 3
+        log.append("F型：共情和团队黏性更高，但内耗压力更容易累积。")
+    else:
+        state.safety["boundary_awareness"] += 4
+        state.team["队内竞争度"] += 1
+        log.append("T型：边界意识更高，冲突表达更直接。")
+
+    if mbti_l == "J":
+        state.company["公司信任度"] += 3
+        state.mind["精神压力"] += 2
+        state.schedule_profile["discipline_score"] += 4
+        log.append("J型：计划性和纪律性更强，公司信任上升，责任压力略高。")
+    else:
+        add(state.career, "舞台感染力", 2, log, "P型更依赖现场反应和即兴", min(career_cap, 13 if "练习生" in timeline else career_cap))
+        state.risks["行程泄露风险"] += 1
+        state.schedule_profile["discipline_score"] = max(0, state.schedule_profile.get("discipline_score", 50) - 2)
+        log.append("P型：现场反应更灵活，纪律波动和行程风险轻微上升。")
+
     # Tag-based low boosts.
     if "舞蹈基础" in profile_tags:
         add(state.career, "舞蹈实力", 5, log, "特长/经历包含舞蹈基础", min(career_cap, 15 if "练习生" in timeline else career_cap))
@@ -161,6 +225,34 @@ def allocate_initial_state(state: GameState, character: Dict[str, Any]) -> None:
         add(state.career, "演技潜力", 5, log, "特长包含表演/演技", min(career_cap, 12 if "练习生" in timeline else career_cap))
     if "创作兴趣" in profile_tags:
         add(state.career, "创作能力", 4, log, "有创作兴趣或基础", min(career_cap, 12 if "练习生" in timeline else career_cap))
+
+    if "镜头优势" in profile_tags or "视觉优势" in profile_tags:
+        add(state.career, "舞台感染力", 3, log, "外貌/镜头风格匹配带来镜头表现优势", min(career_cap, 14 if "练习生" in timeline else career_cap))
+        state.market["话题度"] += 4
+        log.append("镜头/视觉优势：舞台感染力和初始话题度小幅上升。")
+
+    if "综艺潜力" in profile_tags:
+        add(state.career, "综艺感", 5, log, "性格与反应方式具备综艺潜力", min(career_cap, 15 if "练习生" in timeline else career_cap))
+
+    if "体能短板" in profile_tags:
+        state.body["体力"] = max(0, state.body.get("体力", 70) - 8)
+        state.body["肌肉疲劳"] = min(100, state.body.get("肌肉疲劳", 10) + 6)
+        log.append("体能短板：初始体力下降，肌肉疲劳偏高。")
+
+    if "语言压力" in profile_tags:
+        add(state.career, "语言能力", -2, log, "语言压力影响初期表达与采访稳定性", career_cap)
+        state.mind["精神压力"] += 4
+        log.append("语言压力：语言能力轻微受限，精神压力上升。")
+
+    if "家庭压力" in profile_tags:
+        state.mind["精神压力"] += 6
+        state.mind["孤独感"] += 3
+        log.append("家庭压力：精神压力与孤独感上升。")
+
+    if "心理敏感" in profile_tags:
+        state.mind["精神压力"] += 4
+        state.mind["自我认同"] = max(0, state.mind.get("自我认同", 50) - 3)
+        log.append("心理敏感：精神压力上升，自我认同略低。")
 
     if "前运动员" in profile_tags:
         add(state.career, "舞蹈实力", 3, log, "前运动员的身体控制迁移到舞蹈学习", min(career_cap, 14 if "练习生" in timeline else career_cap))
