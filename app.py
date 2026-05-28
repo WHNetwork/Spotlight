@@ -13,7 +13,7 @@ from loguru import logger
 
 from core.config import AppConfig
 from core.engine import TurnEngine
-from core.llm import LLMError, DeepSeekProvider
+from core.llm import LLMError, get_llm_provider
 from core.models import GameState, Choice
 from core.storage import SaveStorage
 from core.action_validator import ActionBlockedError
@@ -380,7 +380,7 @@ class KpopApp:
             image=ft.DecorationImage(
                 src=asset("backgrounds/subpage_bg_wide.png"),
                 fit="cover",
-                opacity=0.92,
+                opacity=1.0,
             ),
         )
 
@@ -841,7 +841,7 @@ class KpopApp:
         ]
 
         try:
-            raw = DeepSeekProvider(self.config).generate(messages, model="deepseek-v4-flash")
+            raw = get_llm_provider(self.config).generate(messages, model=self.config.model_for_tier("flash"))
             data = self.parse_json_object(raw)
             return {
                 "turn": turn_no,
@@ -1182,52 +1182,272 @@ class KpopApp:
         ]
         self.subpage_shell("行程表", self.active_character_label(), "schedule", self.static_responsive_row(controls))
 
+
+    def settings_page_bg(self):
+        return ft.Container(
+            left=0,
+            top=0,
+            right=0,
+            bottom=0,
+            bgcolor="#F8F7FC",
+            image=ft.DecorationImage(
+                src=asset("backgrounds/settings_bg_v3.png"),
+                fit="cover",
+                opacity=1.0,
+            ),
+        )
+
+    def settings_card(self, title: str, subtitle: str, icon_name: str, controls: list, width: int | None = None):
+        return ft.Container(
+            width=width,
+            padding=22,
+            border_radius=30,
+            bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.74, ft.Colors.WHITE)),
+            shadow=ft.BoxShadow(
+                blur_radius=28,
+                spread_radius=0,
+                color=ft.Colors.with_opacity(0.12, C["dai"]),
+                offset=ft.Offset(0, 10),
+            ),
+            content=ft.Column([
+                ft.Row([
+                    ft.Container(icon_image(icon_name, 24, 0.92), width=38, height=38, border_radius=18, bgcolor=ft.Colors.with_opacity(0.34, C["lotus"]), alignment=ft.Alignment.CENTER),
+                    ft.Column([
+                        ft.Text(title, size=self.ui_size(17), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                        ft.Text(subtitle, size=self.ui_size(11), color=C["sub"], font_family=FONT_CN),
+                    ], spacing=1, expand=True),
+                ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Container(height=4),
+                *controls,
+            ], spacing=12, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+        )
+
+    def settings_input_style(self):
+        return {
+            "border_radius": 18,
+            "border_color": ft.Colors.with_opacity(0.52, C["line"]),
+            "focused_border_color": C["dai"],
+            "bgcolor": ft.Colors.with_opacity(0.62, ft.Colors.WHITE),
+            "content_padding": ft.Padding(left=14, right=14, top=10, bottom=10),
+            "text_style": ft.TextStyle(font_family=FONT_CN, color=C["ink"], size=self.ui_size(13)),
+            "label_style": ft.TextStyle(font_family=FONT_CN, color=C["sub"], size=self.ui_size(11)),
+        }
+
+    def settings_textfield(self, label: str, value: str = "", width: int = 390, password: bool = False, hint_text: str = ""):
+        return ft.TextField(
+            label=label,
+            value=value,
+            width=width,
+            password=password,
+            can_reveal_password=password,
+            hint_text=hint_text,
+            **self.settings_input_style(),
+        )
+
+    def settings_dropdown(self, label: str, value: str, options: list, width: int = 390):
+        return ft.Dropdown(
+            label=label,
+            value=value,
+            width=width,
+            options=options,
+            border_radius=18,
+            border_color=ft.Colors.with_opacity(0.52, C["line"]),
+            focused_border_color=C["dai"],
+            bgcolor=ft.Colors.with_opacity(0.62, ft.Colors.WHITE),
+            content_padding=ft.Padding(left=14, right=14, top=8, bottom=8),
+            text_style=ft.TextStyle(font_family=FONT_CN, color=C["ink"], size=self.ui_size(13)),
+            label_style=ft.TextStyle(font_family=FONT_CN, color=C["sub"], size=self.ui_size(11)),
+        )
+
+
+
     def show_settings(self) -> None:
         self.clear()
-        api_key = ft.TextField(label="DeepSeek API Key", password=True, can_reveal_password=True, value="", hint_text="sk-...", width=660)
-        base_url = ft.TextField(label="Base URL", value=self.config.base_url, width=660)
-        model_policy = ft.Dropdown(label="叙事模式", width=660, value=self.config.model_policy, options=[ft.dropdown.Option("auto"), ft.dropdown.Option("flash"), ft.dropdown.Option("pro"), ft.dropdown.Option("custom")])
-        flash_model = ft.TextField(label="Flash Model", value=self.config.flash_model, width=660)
-        pro_model = ft.TextField(label="Pro Model", value=self.config.pro_model, width=660)
-        custom_model = ft.TextField(label="Custom Model", value=self.config.custom_model, width=660)
-        status = ft.Text("", color=ft.Colors.GREEN)
+        self.page.padding = 0
+        self.page.bgcolor = ft.Colors.WHITE
 
-        def save_settings(e):
-            self.config.save(base_url.value or "https://api.deepseek.com", model_policy.value or "auto", flash_model.value or "deepseek-v4-flash", pro_model.value or "deepseek-v4-pro", custom_model.value or "deepseek-chat")
-            if api_key.value:
-                self.config.set_api_key(api_key.value)
-            status.color = ft.Colors.GREEN
-            status.value = "设置已保存。"
+        provider = self.settings_dropdown(
+            "模型服务商",
+            self.config.provider,
+            [
+                ft.dropdown.Option("deepseek", "DeepSeek"),
+                ft.dropdown.Option("mimo", "Xiaomi MiMo"),
+            ],
+            width=390,
+        )
+        model_policy = self.settings_dropdown(
+            "叙事模式",
+            self.config.model_policy,
+            [
+                ft.dropdown.Option("auto", "auto：普通回合用 Flash，重点回合用 Pro"),
+                ft.dropdown.Option("flash", "固定 Flash"),
+                ft.dropdown.Option("pro", "固定 Pro"),
+                ft.dropdown.Option("custom", "固定 Custom"),
+            ],
+            width=390,
+        )
+        timeout_seconds = self.settings_textfield("超时时间（秒）", str(self.config.timeout_seconds), width=190)
+
+        deepseek_api_key = self.settings_textfield("DeepSeek API Key", "", width=420, password=True, hint_text="sk-...")
+        deepseek_base_url = self.settings_textfield("DeepSeek Base URL", self.config.base_url, width=420)
+        deepseek_flash_model = self.settings_textfield("DeepSeek Flash Model", self.config.flash_model, width=420)
+        deepseek_pro_model = self.settings_textfield("DeepSeek Pro Model", self.config.pro_model, width=420)
+        deepseek_custom_model = self.settings_textfield("DeepSeek Custom Model", self.config.custom_model, width=420)
+
+        mimo_api_key = self.settings_textfield("MiMo API Key", "", width=420, password=True, hint_text="mimo key")
+        mimo_base_url = self.settings_textfield("MiMo Base URL", self.config.mimo_base_url, width=420)
+        mimo_flash_model = self.settings_textfield("MiMo Flash Model", self.config.mimo_flash_model, width=420)
+        mimo_pro_model = self.settings_textfield("MiMo Pro Model", self.config.mimo_pro_model, width=420)
+        mimo_custom_model = self.settings_textfield("MiMo Custom Model", self.config.mimo_custom_model, width=420)
+
+        status = ft.Text("", color=C["jade"], size=self.ui_size(13), font_family=FONT_CN)
+
+        def save_settings(e=None):
+            try:
+                timeout_value = int(timeout_seconds.value or "120")
+            except Exception:
+                timeout_value = 120
+
+            self.config.save(
+                provider=provider.value or "deepseek",
+                model_policy=model_policy.value or "auto",
+                timeout_seconds=timeout_value,
+                base_url=deepseek_base_url.value or "https://api.deepseek.com",
+                flash_model=deepseek_flash_model.value or "deepseek-v4-flash",
+                pro_model=deepseek_pro_model.value or "deepseek-v4-pro",
+                custom_model=deepseek_custom_model.value or "deepseek-chat",
+                mimo_base_url=mimo_base_url.value or "https://api.xiaomimimo.com/v1",
+                mimo_flash_model=mimo_flash_model.value or "mimo-v2.5",
+                mimo_pro_model=mimo_pro_model.value or "mimo-v2.5-pro",
+                mimo_custom_model=mimo_custom_model.value or "mimo-v2.5-pro",
+            )
+            if deepseek_api_key.value:
+                self.config.set_api_key(deepseek_api_key.value)
+            if mimo_api_key.value:
+                self.config.set_mimo_api_key(mimo_api_key.value)
+
+            status.color = C["jade"]
+            status.value = f"设置已保存。当前服务商：{self.config.provider_label()}。"
             self.page.update()
 
         def test_model(e, tier: str):
             save_settings(e)
             model = self.config.model_for_tier(tier)
-            status.color = ft.Colors.BLUE
-            status.value = f"正在测试 DeepSeek API：{model}"
+            label = self.config.provider_label()
+            status.color = C["dai"]
+            status.value = f"正在测试 {label}：{model}"
             self.page.update()
             try:
-                provider = DeepSeekProvider(self.config)
-                raw = provider.generate([{"role": "system", "content": "你是一个简洁的中文助手。"}, {"role": "user", "content": "请只回复：DeepSeek API 连接成功。"}], model=model)
-                status.color = ft.Colors.GREEN
-                status.value = f"✅ 调用成功。模型：{model}。返回：{raw[:120]}"
+                provider_obj = get_llm_provider(self.config)
+                raw = provider_obj.generate(
+                    [
+                        {"role": "system", "content": "你是一个简洁的中文助手。"},
+                        {"role": "user", "content": f"请只回复：{label} API 连接成功。"},
+                    ],
+                    model=model,
+                )
+                status.color = C["jade"]
+                status.value = f"✅ 调用成功。服务商：{label}；模型：{model}；返回：{raw[:120]}"
             except Exception as exc:
                 status.color = ft.Colors.RED
                 status.value = f"❌ 调用失败：{exc}"
             self.page.update()
 
-        self.page.add(ft.Container(content=ft.Column([
-            ft.Text("设置", size=28, weight=ft.FontWeight.BOLD),
-            ft.Text("auto：普通回合用 Flash，重大剧情/危机/公关/续约/恋爱曝光用 Pro。正式回合必须调用 叙事引擎。"),
-            api_key, base_url, model_policy, flash_model, pro_model, custom_model,
-            ft.Row([
-                ft.ElevatedButton("保存设置", icon=icon("SAVE"), on_click=save_settings),
-                ft.ElevatedButton("测试 Flash", on_click=lambda e: test_model(e, "flash")),
-                ft.ElevatedButton("测试 Pro", on_click=lambda e: test_model(e, "pro")),
-                ft.OutlinedButton("返回首页", on_click=lambda e: self.show_home()),
-            ], wrap=True),
-            status,
-        ], spacing=14, scroll=ft.ScrollMode.AUTO), padding=30))
+        def pill_button(label: str, icon_name: str, handler, fill=C["lotus"]):
+            return ft.Container(
+                padding=ft.Padding(left=15, right=15, top=10, bottom=10),
+                border_radius=22,
+                bgcolor=ft.Colors.with_opacity(0.84, fill),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.58, ft.Colors.WHITE)),
+                ink=True,
+                on_click=handler,
+                content=ft.Row([
+                    icon_image(icon_name, 18, 0.9),
+                    ft.Text(label, size=self.ui_size(12), color=C["ink"], weight=ft.FontWeight.W_600, font_family=FONT_CN),
+                ], spacing=7, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            )
+
+        top_bar = ft.Container(
+            padding=ft.Padding(left=30, right=30, top=20, bottom=12),
+            content=ft.Row([
+                ft.Container(icon_image("settings", 30, 0.95), width=46, height=46, border_radius=18, bgcolor=ft.Colors.with_opacity(0.45, C["lotus"]), alignment=ft.Alignment.CENTER),
+                ft.Column([
+                    ft.Text("系统设置", size=self.ui_size(25), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                    ft.Text("模型服务商、API Key 与叙事模型配置", size=self.ui_size(12), color=C["sub"], font_family=FONT_CN),
+                ], spacing=1),
+                ft.Container(expand=True),
+                pill_button("返回首页", "app_logo", lambda e: self.show_home(), ft.Colors.WHITE),
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        )
+
+        guide_text = (
+            "MiMo 使用 OpenAI 兼容的 /v1/chat/completions 接口。"
+            "Base URL 默认填 https://api.xiaomimimo.com/v1；API Key 可用 MIMO_API_KEY 环境变量，"
+            "也可以在这里保存。"
+        )
+
+        deepseek_card = self.settings_card(
+            "DeepSeek",
+            "保留原有接口配置",
+            "api",
+            [
+                deepseek_api_key,
+                deepseek_base_url,
+                deepseek_flash_model,
+                deepseek_pro_model,
+                deepseek_custom_model,
+            ],
+            width=470,
+        )
+        mimo_card = self.settings_card(
+            "Xiaomi MiMo",
+            "新增小米大模型接口配置",
+            "settings",
+            [
+                mimo_api_key,
+                mimo_base_url,
+                mimo_flash_model,
+                mimo_pro_model,
+                mimo_custom_model,
+            ],
+            width=470,
+        )
+        global_card = self.settings_card(
+            "全局选择",
+            "决定正式回合使用哪个服务商",
+            "api",
+            [
+                provider,
+                model_policy,
+                timeout_seconds,
+                ft.Text(guide_text, size=self.ui_size(12), color=C["sub"], font_family=FONT_CN, text_align=ft.TextAlign.CENTER),
+                ft.Text("模型设置会持久保存；API Key 优先进入系统密钥环，失败时保存到用户配置目录。", size=self.ui_size(11), color=C["dai"], font_family=FONT_CN, text_align=ft.TextAlign.CENTER),
+                ft.Row([
+                    pill_button("保存设置", "save_archive", save_settings, C["jade"]),
+                    pill_button("测试 Flash", "stage", lambda e: test_model(e, "flash"), C["lotus"]),
+                    pill_button("测试 Pro", "contract", lambda e: test_model(e, "pro"), C["apricot"]),
+                ], spacing=10, wrap=True, alignment=ft.MainAxisAlignment.CENTER),
+                status,
+            ],
+            width=430,
+        )
+
+        settings_body = ft.Column([
+            ft.Row([global_card, deepseek_card, mimo_card], spacing=18, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.START),
+        ], spacing=18, horizontal_alignment=ft.CrossAxisAlignment.CENTER, scroll=ft.ScrollMode.AUTO)
+
+        content = ft.Column([
+            top_bar,
+            ft.Container(
+                expand=True,
+                alignment=ft.Alignment.TOP_CENTER,
+                padding=ft.Padding(left=34, right=34, top=18, bottom=30),
+                content=settings_body,
+            ),
+        ], expand=True)
+
+        self.page.add(ft.Stack([self.settings_page_bg(), content], expand=True))
         self.page.update()
 
 
@@ -2619,6 +2839,7 @@ class KpopApp:
         crisis_children.append(ft.Divider(color=ft.Colors.with_opacity(0.35, C["line"])))
 
         if route:
+            crisis_children.append(self.text_line("服务商", self.config.provider_label(), "api", C["jade"]))
             crisis_children.append(self.text_line("叙事模式", self.config.model_policy, "api", C["jade"]))
             crisis_children.append(self.text_line("当前线路", route.actual_model, "api", C["lotus"]))
             crisis_children.append(self.text_line("最近状态", route.turn_kind, "schedule", C["apricot"]))

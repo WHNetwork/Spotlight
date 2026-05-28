@@ -31,6 +31,53 @@ class DeepSeekProvider(BaseProvider):
         payload = {"model": actual_model, "messages": messages, "temperature": 0.85, "stream": False}
         url = self.config.base_url.rstrip("/") + "/chat/completions"
         logger.info(f"Calling DeepSeek: {url}, model={actual_model}")
+        return self._post_chat(url, headers, payload, provider_name="DeepSeek")
+
+    def _post_chat(self, url: str, headers: dict, payload: dict, provider_name: str) -> str:
+        try:
+            with httpx.Client(timeout=self.config.timeout_seconds) as client:
+                response = client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPStatusError as exc:
+            raise LLMError(f"{provider_name} HTTP 错误：{exc.response.status_code} {exc.response.text}") from exc
+        except Exception as exc:
+            raise LLMError(f"{provider_name} 调用失败：{exc}") from exc
+
+        try:
+            content = data["choices"][0]["message"]["content"]
+            preview = str(content).replace("\n", " ")[:260]
+            logger.info(f"{provider_name} returned content: chars={len(str(content))}, preview={preview}")
+            return content
+        except Exception as exc:
+            raise LLMError(f"{provider_name} 返回格式异常：{data}") from exc
+
+
+class XiaomiMiMoProvider(BaseProvider):
+    def __init__(self, config: AppConfig) -> None:
+        self.config = config
+
+    def generate(self, messages: List[Dict[str, str]], model: str | None = None) -> str:
+        api_key = self.config.get_mimo_api_key_fallback()
+        if not api_key:
+            raise LLMError("没有找到 Xiaomi MiMo API Key。请在设置页填写 MiMo API Key，或设置环境变量 MIMO_API_KEY。")
+
+        actual_model = model or self.config.mimo_custom_model
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": actual_model,
+            "messages": messages,
+            "max_completion_tokens": 4096,
+            "temperature": 0.85,
+            "top_p": 0.95,
+            "stream": False,
+            "thinking": {"type": "disabled"},
+        }
+        url = self.config.mimo_base_url.rstrip("/") + "/chat/completions"
+        logger.info(f"Calling Xiaomi MiMo: {url}, model={actual_model}")
 
         try:
             with httpx.Client(timeout=self.config.timeout_seconds) as client:
@@ -38,18 +85,23 @@ class DeepSeekProvider(BaseProvider):
                 response.raise_for_status()
                 data = response.json()
         except httpx.HTTPStatusError as exc:
-            raise LLMError(f"DeepSeek HTTP 错误：{exc.response.status_code} {exc.response.text}") from exc
+            raise LLMError(f"Xiaomi MiMo HTTP 错误：{exc.response.status_code} {exc.response.text}") from exc
         except Exception as exc:
-            raise LLMError(f"DeepSeek 调用失败：{exc}") from exc
+            raise LLMError(f"Xiaomi MiMo 调用失败：{exc}") from exc
 
         try:
             content = data["choices"][0]["message"]["content"]
             preview = str(content).replace("\n", " ")[:260]
-            logger.info(f"DeepSeek returned content: chars={len(str(content))}, preview={preview}")
+            logger.info(f"Xiaomi MiMo returned content: chars={len(str(content))}, preview={preview}")
             return content
         except Exception as exc:
-            raise LLMError(f"DeepSeek 返回格式异常：{data}") from exc
+            raise LLMError(f"Xiaomi MiMo 返回格式异常：{data}") from exc
 
+
+def get_llm_provider(config: AppConfig) -> BaseProvider:
+    if config.provider == "mimo":
+        return XiaomiMiMoProvider(config)
+    return DeepSeekProvider(config)
 
 def _stringify_text(value) -> str:
     if value is None:

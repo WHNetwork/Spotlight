@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 from core.config import AppConfig
-from core.llm import DeepSeekProvider, parse_turn_response
+from core.llm import get_llm_provider, parse_turn_response
 from core.models import GameState, TurnResponse, Choice, RouteInfo, SystemEvent
 from core.prompts import build_messages
 from core.rules import base_diff_for_action, apply_diff, sanitize_suggested_diff
@@ -34,7 +34,7 @@ class TurnEngine:
     def __init__(self, storage: SaveStorage, config: AppConfig) -> None:
         self.storage = storage
         self.config = config
-        self.provider = DeepSeekProvider(config)
+        self.provider = get_llm_provider(config)
 
     def create_initial_state(self, character: Dict[str, Any]) -> GameState:
         state = GameState()
@@ -99,7 +99,7 @@ class TurnEngine:
         state: GameState,
         player_action: str,
     ) -> tuple[GameState, TurnResponse, Dict[str, Any], RouteInfo, list[SystemEvent], ActionValidationResult]:
-        """Run one turn using DeepSeek only.
+        """Run one turn using the selected LLM provider.
 
         This method works on a deep copy of the state until DeepSeek has returned
         valid JSON. If the API call fails, the caller's current state is not
