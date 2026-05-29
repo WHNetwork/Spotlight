@@ -249,6 +249,8 @@ class ContractMixin:
             ft.Column([
                 self.metric_bar("合约稳定度", company.get("合约稳定度", 0), "contract", C["jade"]),
                 self.metric_bar("公司信任度", company.get("公司信任度", 0), "staff_boundary", C["celadon"]),
+                self.text_line("公司规模", company.get("公司规模", "中型公司"), "contract", C["lavender"]),
+                self.metric_bar("资源池", company.get("资源池", 50), "market", C["jade"]),
                 self.metric_bar("资源倾斜度", company.get("资源倾斜度", 0), "market", C["jade"]),
                 self.metric_bar("个人议价权", company.get("个人议价权", 0), "contract", C["apricot"]),
                 self.metric_bar("公关危机风险", risks.get("公关危机风险", 0), "crisis_pr", C["rouge"], danger_high=True),
@@ -286,6 +288,8 @@ class ContractMixin:
                             ("合同类型", contract_name, "contract", C["jade"]),
                             ("签约阶段", contract_phase, "schedule", C["lavender"]),
                             ("所属公司", ch.get("公司") or "未填写", "market", C["jade"]),
+                            ("公司规模", company.get("公司规模", "中型公司"), "contract", C["lavender"]),
+                            ("公司路线", company.get("公司路线", "均衡培养"), "market", C["jade"]),
                             ("公司满意", company.get("公司满意度"), "contract", C["jade"]),
                             ("公司信任", company.get("公司信任度"), "staff_boundary", C["celadon"]),
                             ("主推指数", company.get("主推指数"), "stage", C["lavender"]),

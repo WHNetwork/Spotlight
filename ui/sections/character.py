@@ -735,6 +735,7 @@ class CharacterMixin:
                 "RAP地下社群",
                 "小公司再出道",
             ],
+            "company_size": ["大型公司", "中型公司", "小型公司"],
             "timeline": ["练习生阶段", "出道准备期", "已出道新人"],
             "nationality": ["中国", "韩国", "日本", "泰国", "美国华裔", "加拿大华裔", "澳大利亚华裔", "新加坡", "越南", "菲律宾", "马来西亚"],
             "mbti": ["INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"],
@@ -742,6 +743,7 @@ class CharacterMixin:
         }
         select_values: Dict[str, str] = {
             "identity": "素人学生被星探发现",
+            "company_size": "中型公司",
             "timeline": "练习生阶段",
             "nationality": "中国",
             "mbti": "INFP",
@@ -749,6 +751,7 @@ class CharacterMixin:
         }
         select_labels: Dict[str, str] = {
             "identity": "身份来源",
+            "company_size": "公司规模",
             "timeline": "时间线",
             "nationality": "国籍",
             "mbti": "MBTI",
@@ -869,6 +872,7 @@ class CharacterMixin:
             )
 
         identity = make_selector("identity", 330)
+        company_size = make_selector("company_size", 220)
         timeline = make_selector("timeline", 300)
         nationality = make_selector("nationality", 260)
         mbti = make_selector("mbti", 220)
@@ -939,6 +943,7 @@ class CharacterMixin:
         def collect_basic() -> Dict[str, Any]:
             data: Dict[str, Any] = {
                 "身份": select_values["identity"],
+                "公司规模": select_values["company_size"],
                 "时间线": select_values["timeline"],
                 "国籍": select_values["nationality"],
                 "MBTI": select_values["mbti"],
@@ -1252,12 +1257,12 @@ class CharacterMixin:
             "new_character",
             [
                 ft.Row([
-                    input_type_chip("选项：身份 / 时间线 / 国籍 / MBTI / 生理周期", C["jade"]),
+                    input_type_chip("选项：身份 / 公司规模 / 时间线 / 国籍 / MBTI / 生理周期", C["jade"]),
                     input_type_chip("手动：艺名 / 本名 / 年龄 / 身高", C["lotus"]),
                     input_type_chip("自动：重名校验 / AI生成 / 标签 / 数值倾向", C["apricot"]),
                 ], spacing=8, wrap=True),
                 ft.Text("先确定选项和手动字段。点击确认后，系统会自动校验重名、年龄和身高；校验通过后才会进入AI生成。", size=self.ui_size(11), color=C["sub"], font_family=FONT_CN),
-                ft.Row([identity, timeline, nationality, mbti, self.dice_button(randomize_mbti, "随机MBTI"), period_mode, self.period_intro_button()], spacing=10, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Row([identity, company_size, timeline, nationality, mbti, self.dice_button(randomize_mbti, "随机MBTI"), period_mode, self.period_intro_button()], spacing=10, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ft.Row([
                     ft.Column([
                         ft.Row([manual_field_row("艺名"), manual_field_row("本名")], spacing=14, wrap=True),

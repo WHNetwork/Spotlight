@@ -13,6 +13,8 @@ class Choice(BaseModel):
 class NPCReaction(BaseModel):
     name: str
     reaction: str
+    role: Optional[str] = None
+    age: Optional[int] = None
 
 
 class SystemEvent(BaseModel):
@@ -203,7 +205,7 @@ class GameState(BaseModel):
         "边界感": 40,
     })
 
-    company: Dict[str, int] = Field(default_factory=lambda: {
+    company: Dict[str, Any] = Field(default_factory=lambda: {
         "公司满意度": 50,
         "公司信任度": 45,
         "主推指数": 35,
@@ -212,6 +214,10 @@ class GameState(BaseModel):
         "合约稳定度": 70,
         "个人议价权": 10,
         "续约倾向": 50,
+        "公司规模": "中型公司",
+        "公司路线": "均衡培养",
+        "资源池": 50,
+        "出道窗口压力": 45,
     })
 
     team: Dict[str, int] = Field(default_factory=lambda: {
@@ -251,6 +257,8 @@ class GameState(BaseModel):
         "音源潜力": 30,
         "销量潜力": 25,
         "短视频传播力": 25,
+        "直拍传播力": 20,
+        "海外流媒潜力": 0,
     })
 
     risks: Dict[str, int] = Field(default_factory=lambda: {
@@ -399,6 +407,82 @@ class GameState(BaseModel):
     teammates: List[Dict[str, Any]] = Field(default_factory=list)
     important_npcs: List[Dict[str, Any]] = Field(default_factory=list)
 
+    trainee_life: Dict[str, Any] = Field(default_factory=lambda: {
+        "weekly_slots_total": 7,
+        "mandatory_slots": 4,
+        "free_slots": 3,
+        "slot_stage": "trainee",
+        "fixed_slot_plan": ["舞蹈课", "声乐课", "体能课", "形象/语言/团队课"],
+        "last_slot_usage": {},
+        "overbooked_weeks": 0,
+        "idol_overbooked_weeks": 0,
+        "practice_room_access": 50,
+        "dorm_friction": 20,
+        "bullying_pressure": 15,
+        "hidden_conflict": 0,
+        "protected_someone_memory": 0,
+        "recent_life_notes": [],
+    })
+
+    market_scores: Dict[str, Any] = Field(default_factory=lambda: {
+        "音源成绩": 0,
+        "专辑销量指数": 0,
+        "首日销量": 0,
+        "首周销量": 0,
+        "MV播放指数": 0,
+        "短视频传播力": 25,
+        "直拍传播力": 20,
+        "投票动员力": 0,
+        "音乐节目分数": 0,
+        "一位概率": 0,
+        "年度奖项积分": 0,
+        "本土热度": 0,
+        "海外流媒": 0,
+        "品牌询盘量": 0,
+        "路人盘": 40,
+        "核心粉购买力": 0,
+        "last_market_result": "",
+        "history": [],
+    })
+
+    commercial: Dict[str, Any] = Field(default_factory=lambda: {
+        "商业安全度": 70,
+        "品牌适配度": 45,
+        "代言数量": 0,
+        "杂志资源": 0,
+        "奢侈品关系": 0,
+        "个人收入": 0,
+        "公司分成比例": 70,
+        "粉丝购买力": 0,
+        "争议商业风险": 10,
+        "last_commercial_note": "",
+    })
+
+    contract_terms: Dict[str, Any] = Field(default_factory=lambda: {
+        "合约剩余月数": 84,
+        "玩家续约意愿": 50,
+        "队友续约意向": 50,
+        "分成比例": 70,
+        "solo权限": 10,
+        "演员约权限": 10,
+        "创作署名权": 5,
+        "休假保障": 25,
+        "健康保障": 35,
+        "工作室可能性": 0,
+        "团体存续概率": 65,
+        "last_contract_note": "",
+    })
+
+    career_branches: Dict[str, Any] = Field(default_factory=lambda: {
+        "acting_path_stage": "未开启",
+        "solo_path_stage": "未开启",
+        "unit_path_stage": "未开启",
+        "creative_path_stage": "未开启",
+        "rights_path_stage": "未开启",
+        "branch_opportunities": [],
+        "branch_history": [],
+    })
+
     current_choices: List[Choice] = Field(default_factory=list)
     flags: List[str] = Field(default_factory=list)
     resolved_flags: List[str] = Field(default_factory=list)
@@ -463,6 +547,11 @@ class GameState(BaseModel):
             "active_crises": [c.model_dump() for c in self.active_crises],
             "teammates": self.teammates,
             "important_npcs": self.important_npcs,
+            "trainee_life": self.trainee_life,
+            "market_scores": self.market_scores,
+            "commercial": self.commercial,
+            "contract_terms": self.contract_terms,
+            "career_branches": self.career_branches,
             "flags": self.flags,
             "major_events": self.major_events,
             "unresolved_conflicts": self.unresolved_conflicts,

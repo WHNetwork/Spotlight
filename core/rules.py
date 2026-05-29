@@ -19,6 +19,14 @@ CATEGORY_MAP = {
     "风险状态": "risks",
     "回归": "comeback",
     "回归状态": "comeback",
+    "练习生日常": "trainee_life",
+    "练习生状态": "trainee_life",
+    "市场成绩": "market_scores",
+    "成绩状态": "market_scores",
+    "商业资源": "commercial",
+    "商业状态": "commercial",
+    "合约条款": "contract_terms",
+    "续约状态": "contract_terms",
 }
 
 def clamp(value: int, low: int = 0, high: int = 100) -> int:

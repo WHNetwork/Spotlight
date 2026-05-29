@@ -94,7 +94,11 @@ def debut_readiness_score(state: GameState) -> int:
     )
 
     # Company resource and concept fit modifiers.
+    resource_pool = int(comp.get("资源池", 50))
+    launch_pressure = int(comp.get("出道窗口压力", 45))
     score += (int(comp.get("资源倾斜度", 30)) - 30) * 0.04
+    score += (resource_pool - 50) * 0.05
+    score += (launch_pressure - 45) * 0.03
     if "出道概念适配" in " ".join(getattr(state, "flags", []) or []):
         score += 5
     return max(0, min(100, int(round(score))))

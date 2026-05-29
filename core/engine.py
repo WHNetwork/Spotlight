@@ -28,6 +28,11 @@ from core.progression_system import ensure_progression_state, convert_growth_dif
 from core.skill_decay_system import ensure_skill_decay_state, evaluate_skill_decay_system
 from core.debut_system import ensure_debut_state, evaluate_debut_system
 from core.ending_system import ensure_ending_state, evaluate_ending_system
+from core.company_system import ensure_company_profile, evaluate_company_system
+from core.trainee_life_system import ensure_trainee_life_state, evaluate_trainee_life_system
+from core.market_score_system import ensure_market_score_state, evaluate_market_score_system
+from core.career_branch_system import ensure_career_branch_state, evaluate_career_branch_system
+from core.brand_contract_system import ensure_brand_contract_state, evaluate_brand_contract_system
 
 
 class TurnEngine:
@@ -74,6 +79,11 @@ class TurnEngine:
         ensure_ending_state(state)
 
         allocate_initial_state(state, character)
+        ensure_company_profile(state)
+        ensure_trainee_life_state(state)
+        ensure_market_score_state(state)
+        ensure_career_branch_state(state)
+        ensure_brand_contract_state(state)
 
         for tag in state.profile_tags:
             flag = f"身份标签：{tag}"
@@ -121,6 +131,8 @@ class TurnEngine:
         advance_period(working_state, days=turn_duration_days)
 
         schedule_events, schedule_diff = evaluate_schedule_system(working_state, action, route_info)
+        company_events, company_diff = evaluate_company_system(working_state, action)
+        trainee_life_events, trainee_life_diff = evaluate_trainee_life_system(working_state, action)
 
         base_diff = base_diff_for_action(action, working_state)
         base_diff = apply_talent_modifiers(working_state, action, base_diff)
@@ -133,6 +145,9 @@ class TurnEngine:
         skill_decay_events, skill_decay_diff = evaluate_skill_decay_system(working_state, action)
         debut_events, debut_diff = evaluate_debut_system(working_state, action)
         ending_events, ending_diff = evaluate_ending_system(working_state, action)
+        market_score_events, market_score_diff = evaluate_market_score_system(working_state, action)
+        career_branch_events, career_branch_diff = evaluate_career_branch_system(working_state, action)
+        brand_contract_events, brand_contract_diff = evaluate_brand_contract_system(working_state, action)
 
         system_events, system_diff = evaluate_all_systems(working_state, action)
         period_events, period_diff = evaluate_period_system(working_state, action)
@@ -146,10 +161,15 @@ class TurnEngine:
         for extra_diff in [
             time_diff,
             schedule_diff,
+            company_diff,
+            trainee_life_diff,
             progression_diff,
             skill_decay_diff,
             debut_diff,
             ending_diff,
+            market_score_diff,
+            career_branch_diff,
+            brand_contract_diff,
             period_diff,
             inner_diff,
             relationship_diff,
@@ -165,10 +185,15 @@ class TurnEngine:
             validation.system_events
             + time_events
             + schedule_events
+            + company_events
+            + trainee_life_events
             + progression_events
             + skill_decay_events
             + debut_events
             + ending_events
+            + market_score_events
+            + career_branch_events
+            + brand_contract_events
             + system_events
             + period_events
             + inner_events

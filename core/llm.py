@@ -29,7 +29,13 @@ class DeepSeekProvider(BaseProvider):
 
         actual_model = model or self.config.custom_model
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        payload = {"model": actual_model, "messages": messages, "temperature": 0.85, "stream": False}
+        payload = {
+            "model": actual_model,
+            "messages": messages,
+            "temperature": 0.85,
+            "stream": False,
+            "response_format": {"type": "json_object"},
+        }
         url = self.config.base_url.rstrip("/") + "/chat/completions"
         logger.info(f"Calling DeepSeek: {url}, model={actual_model}")
         return self._post_chat(url, headers, payload, provider_name="DeepSeek")
@@ -76,6 +82,7 @@ class XiaomiMiMoProvider(BaseProvider):
             "top_p": 0.95,
             "stream": False,
             "thinking": {"type": "disabled"},
+            "response_format": {"type": "json_object"},
         }
         url = self.config.mimo_base_url.rstrip("/") + "/chat/completions"
         logger.info(f"Calling Xiaomi MiMo: {url}, model={actual_model}")
@@ -178,7 +185,12 @@ def _normalize_turn_response_data(data: dict) -> dict:
         fixed = []
         for i, item in enumerate(data["npc_reactions"]):
             if isinstance(item, dict):
-                fixed.append({"name": str(item.get("name") or item.get("角色") or f"人物{i+1}"), "reaction": _stringify_text(item.get("reaction") or item.get("反应") or item.get("text") or item)})
+                fixed.append({
+                    "name": str(item.get("name") or item.get("角色") or f"人物{i+1}"),
+                    "reaction": _stringify_text(item.get("reaction") or item.get("反应") or item.get("text") or item),
+                    "role": item.get("role") or item.get("身份") or item.get("关系"),
+                    "age": item.get("age") or item.get("年龄"),
+                })
             else:
                 fixed.append({"name": f"人物{i+1}", "reaction": _stringify_text(item)})
         data["npc_reactions"] = fixed

@@ -5,8 +5,8 @@ from core.models import GameState, SystemEvent, RouteInfo
 from core.rules import _add
 
 CRISIS_WORDS = ["回应", "澄清", "声明", "道歉", "公关", "舆论", "热搜", "黑粉", "造谣", "霸凌", "不和", "恋爱曝光", "曝光", "私生", "追车", "泄露", "住址", "伤病", "发烧", "崩溃", "退团", "解约", "雪藏", "争议"]
-MAINLINE_WORDS = ["出道", "回归", "一位", "大赏", "颁奖", "续约", "合同", "solo", "单飞", "演员", "转型", "解散", "世巡", "演唱会", "主打歌"]
-FOCUS_WORDS = ["考核", "会议", "镜头", "part", "center", "分量", "资源", "概念", "风格", "制作", "demo", "团综", "直播", "签售", "综艺", "队友", "谈心"]
+MAINLINE_WORDS = ["出道", "回归", "一位", "大赏", "颁奖", "续约", "合同", "谈判", "维权", "暂停活动", "solo", "Solo", "单飞", "演员", "转型", "解散", "世巡", "演唱会", "主打歌"]
+FOCUS_WORDS = ["考核", "会议", "镜头", "part", "center", "分量", "资源", "概念", "风格", "制作", "demo", "团综", "直播", "签售", "综艺", "队友", "谈心", "品牌", "代言", "杂志", "商业", "直拍", "榜单", "销量", "音源"]
 
 def classify_turn(action: str, state: GameState) -> RouteInfo:
     if any(word in action for word in CRISIS_WORDS):

@@ -153,10 +153,17 @@ def register_known_npc(state: GameState, name: str, role: str = "剧情人物", 
     name = str(name or "").strip()
     if _is_generic_npc_name(name):
         return False
+    try:
+        age = int(age) if age is not None and str(age).strip() else None
+    except Exception:
+        age = None
     if not hasattr(state, "important_npcs") or state.important_npcs is None:
         state.important_npcs = []
     if not any(_npc_name_from_record(record) == name for record in state.important_npcs):
-        state.important_npcs.append({"name": name, "role": role or "剧情人物"})
+        record = {"name": name, "role": role or "剧情人物"}
+        if age is not None:
+            record["age"] = age
+        state.important_npcs.append(record)
     if not hasattr(state, "relationships") or state.relationships is None:
         state.relationships = {}
     if name not in state.relationships:
@@ -172,8 +179,9 @@ def register_response_npcs(state: GameState, response: Any, action: str = "") ->
         reaction_text = str(getattr(reaction, "reaction", "") or "")
         if _is_generic_npc_name(name):
             continue
-        role = infer_role_from_text(name, f"{action} {reaction_text}")
-        register_known_npc(state, name, role)
+        role = str(getattr(reaction, "role", "") or "").strip() or infer_role_from_text(name, f"{action} {reaction_text}")
+        age = getattr(reaction, "age", None)
+        register_known_npc(state, name, role, age)
         if name not in registered:
             registered.append(name)
     ensure_default_relationships(state)
@@ -184,7 +192,6 @@ def ensure_default_relationships(state: GameState) -> None:
     if not hasattr(state, "relationships") or state.relationships is None:
         state.relationships = {}
 
-    player_age = state.age_context.get("age")
     def sync(rel: Dict[str, Any]) -> None:
         rel["professional_role_category"] = staff_role_category(str(rel.get("role", "")))
         rel["relationship_category"] = relationship_category_for_role(str(rel.get("role", "")))
@@ -209,44 +216,12 @@ def ensure_default_relationships(state: GameState) -> None:
             sync(rel)
             state.relationships[name] = rel
 
-    # 基础 NPC：
-    # 裴智秀：同龄练习生，peer，可以进入 CP。
-    # 韩室长：经纪人，高权力差，严格边界。
-    # 尹老师：老师，高评价权，严格边界。
-    # 宋夏：同龄造型助理，低权力工作人员，可以产生心动，但只走职业边界风险。
-    # 崔PD：制作/PD，资源权，高权力差。
-    starter = [
-        ("裴智秀", "同期练习生", player_age),
-        ("韩室长", "经纪人", None),
-        ("尹老师", "舞蹈老师", None),
-        ("宋夏", "同龄造型助理", player_age),
-        ("崔PD", "制作PD", None),
-    ]
-    starter = []
-    for name, role, age in starter:
-        rel = default_relationship(name, role, age)
-        sync(rel)
-        state.relationships[name] = rel
-
-
 def find_relationship_target(state: GameState, action: str) -> str | None:
     ensure_default_relationships(state)
     for name in known_relationship_names(state):
         if name and name in action:
             return name
     return None
-
-    if "经纪人" in action or "韩室长" in action:
-        return "韩室长"
-    if "PD" in action or "制作人" in action or "主管" in action or "崔PD" in action:
-        return "崔PD"
-    if "老师" in action or "舞蹈老师" in action or "尹老师" in action:
-        return "尹老师"
-    if any(w in action for w in ["造型", "化妆", "妆发", "服装助理", "造型助理", "工作人员", "宋夏"]):
-        return "宋夏"
-    if "队友" in action or "同期" in action or "她" in action or "智秀" in action:
-        return "裴智秀"
-    return "裴智秀"
 
 def classify_relationship_signals(action: str) -> List[str]:
     signals: List[str] = []

@@ -1,0 +1,326 @@
+{
+  "generated_at": "2026-05-29T12:10:44",
+  "repo": "D:\\Users\\87323\\KPOP",
+  "provider": "Xiaomi MiMo",
+  "model_policy": "flash",
+  "loaded_modules": [
+    "00_core_rules.md",
+    "01_output_contract.md",
+    "02_stage_gate.md",
+    "02_state_and_diff.md",
+    "02_systems_summary.md",
+    "03_attribute_sources.md",
+    "03_company_generation.md",
+    "03_event_engine.md",
+    "03_event_rules.md",
+    "04_crisis_lifecycle.md",
+    "04_health_system.md",
+    "04_public_relations.md",
+    "05_love_rules.md",
+    "05_resource_and_comeback.md",
+    "05_talent_system.md",
+    "06_team_and_lens_harmony.md",
+    "06_tone.md",
+    "07_fandom_pr_system.md",
+    "07_initial_allocation_and_abilities.md",
+    "07_trainee_daily_bullying.md",
+    "08_love_and_safety.md",
+    "08_period_system.md",
+    "09_company_market_contract.md",
+    "09_inner_life_system.md",
+    "09_market_score_system.md",
+    "10_relationship_system.md",
+    "10_teammate_npc_generation.md",
+    "10_training_career_identity.md",
+    "11_rival_media_time.md",
+    "11_time_age_school_safety_hierarchy.md",
+    "12_schedule_progression_debut_ending.md",
+    "12_system_linkage_examples.md",
+    "13_career_branch_system.md",
+    "13_model_routing_system.md",
+    "14_brand_money_contract.md",
+    "README.md"
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "pass_rate": 0.0
+  },
+  "cases": [
+    {
+      "name": "small_company_resource_pressure",
+      "description": "小公司资源池、出道窗口压力、公司风格偏向必须进入回合事件和叙事。",
+      "api_required": true,
+      "passed": false,
+      "failures": [
+        "Raw model response used Markdown code fences."
+      ],
+      "warnings": [],
+      "elapsed_seconds": 16.752,
+      "action": "我在月末考核前找经纪人讨论资源、练习室使用权和公司出道窗口压力。",
+      "route": {
+        "model_tier": "flash",
+        "turn_kind": "focus",
+        "reason": "重点剧情回合，使用 Flash。",
+        "actual_model": "mimo-v2.5"
+      },
+      "event_codes": [
+        "action_stage_rewrite_resource",
+        "time_advanced",
+        "company_low_resource_pressure",
+        "company_debut_window_pressure",
+        "company_style_bias",
+        "progression_xp_gain",
+        "debut_not_ready",
+        "trainee_resource_request",
+        "rel_rivalry_signal",
+        "progression_xp_gain"
+      ],
+      "event_sources": [
+        "action_validator",
+        "time",
+        "company",
+        "company",
+        "company",
+        "progression",
+        "debut",
+        "trainee_resource",
+        "relationship",
+        "progression"
+      ],
+      "applied_diff": {
+        "公司与合约.公司信任度": [
+          46,
+          49
+        ],
+        "公司与合约.公司满意度": [
+          46,
+          45
+        ],
+        "团队关系.队内竞争度": [
+          62,
+          70
+        ],
+        "心理状态.精神压力": [
+          44,
+          49
+        ],
+        "风险.霸凌排挤风险": [
+          10,
+          13
+        ],
+        "公司与合约.主推指数": [
+          28,
+          29
+        ],
+        "市场.直拍传播力": [
+          20,
+          21
+        ],
+        "粉丝与舆论.唯粉攻击性": [
+          10,
+          11
+        ]
+      },
+      "prompt_chars": 40166,
+      "response": {
+        "narrative_excerpt": "走廊里贴着本月考核的倒计时表，红色数字提醒着距离下次评估只剩二十五天。你深吸一口气，推开经纪组办公室的门，看见戴黑框眼镜的经纪人正对着电脑屏幕皱眉。\n\n“老师，我想问一下月末考核的事。”你尽量让声音听起来平静，“能不能在考核曲里争取一个更清晰的展示段落？比如舞蹈齐舞里的特写位置，或者评估录像里多一点镜头？”\n\n经纪人摘下眼镜，揉了揉鼻梁。办公室的空调嗡嗡响着，墙上贴着其他练习生的考核评分表，你的名字在最后一行，旁边是空白。\n\n“澄夏，你的舞蹈基础不错，老师们都说过。”她顿了顿，“但公司资源池现在很紧，课程、妆造、宣传都在压缩。考核展示位置不是我想给就能给的——每个练习生都在争，尤其是出道窗口压力大的时候。”\n\n她指向窗外练习室的方向：“你看见了吧？最近练习室排队时间变长了，声乐课也从一对一改成了小班。公司想用考核逼出状态，但机会就那么多。”\n\n你注意到她用了“逼出状态”这个词。办公室的百叶窗漏进一道光，照在桌上那份《练习生评估标准》上，你看见“镜头表现力”那一栏被红笔圈了起来。\n\n“我不是要特殊待遇，”你轻声说，“只是想确认，我有没有可能在考核里展示更多舞蹈方面的东西。”\n\n经纪人沉默了几秒，目光落在你身上。INFJ 的直觉让你捕捉到一丝犹豫——她似乎想说什么，但最终只是点了点头。\n\n“我会跟舞蹈老师提一下。但你要明白，考核位置是按综合数据排的，直拍传播力、课堂表现、团队配合都会算",
+        "public_summary": "你向经纪人争取月末考核的展示机会，被告知资源紧张、机会需要竞争，公司更看重可量化的数据表现。",
+        "choices": [
+          {
+            "id": "A",
+            "text": "去舞蹈教室加练考核曲，争取在老师面前多展示几次"
+          },
+          {
+            "id": "B",
+            "text": "找声乐老师单独请教，弥补短板，提升综合评分"
+          },
+          {
+            "id": "C",
+            "text": "观察其他练习生的排练方式，记录他们的优势和弱点"
+          },
+          {
+            "id": "D",
+            "text": "回宿舍写日记，整理今天的信息和情绪"
+          },
+          {
+            "id": "E",
+            "text": "自定义行动"
+          }
+        ],
+        "npc_reactions": [
+          {
+            "name": "经纪人",
+            "reaction": "对你的请求表现出有限的理解，但明确表示资源有限，机会需要竞争。她暗示了公司数据导向的考核标准，并答应会向舞蹈老师转达你的意向，但不承诺结果。",
+            "role": "经纪组负责人",
+            "age": 32
+          }
+        ]
+      },
+      "state_probe": {
+        "stage": "练习生阶段",
+        "company": {
+          "公司满意度": 45,
+          "公司信任度": 49,
+          "主推指数": 29,
+          "资源倾斜度": 18,
+          "危机关注度": 7,
+          "合约稳定度": 55,
+          "个人议价权": 18,
+          "续约倾向": 42,
+          "公司规模": "小型公司",
+          "公司路线": "低资源高自主",
+          "资源池": 24,
+          "出道窗口压力": 74,
+          "公司名称": "未命名娱乐公司",
+          "公司风格": "数据导向",
+          "财务状况": 36,
+          "现役团体资源": 24,
+          "练习生人数": 14,
+          "内部派系": [
+            "经纪组",
+            "制作组",
+            "宣传组",
+            "法务",
+            "造型团队"
+          ],
+          "母公司项目优先级": 50,
+          "新团准备度": 25,
+          "内部培养方向": "未公开"
+        },
+        "trainee_life": {
+          "weekly_slots_total": 7,
+          "mandatory_slots": 4,
+          "free_slots": 3,
+          "last_slot_usage": {
+            "训练": 1,
+            "公司观察": 1
+          },
+          "overbooked_weeks": 0,
+          "practice_room_access": 50,
+          "dorm_friction": 20,
+          "bullying_pressure": 64,
+          "hidden_conflict": 0,
+          "protected_someone_memory": 0,
+          "recent_life_notes": []
+        },
+        "market_scores": {
+          "音源成绩": 0,
+          "专辑销量指数": 0,
+          "首日销量": 0,
+          "首周销量": 0,
+          "MV播放指数": 0,
+          "短视频传播力": 25,
+          "直拍传播力": 20,
+          "投票动员力": 0,
+          "音乐节目分数": 0,
+          "一位概率": 0,
+          "年度奖项积分": 0,
+          "本土热度": 0,
+          "海外流媒": 0,
+          "品牌询盘量": 0,
+          "路人盘": 40,
+          "核心粉购买力": 0,
+          "last_market_result": "",
+          "history": []
+        },
+        "commercial": {
+          "商业安全度": 70,
+          "品牌适配度": 45,
+          "代言数量": 0,
+          "杂志资源": 0,
+          "奢侈品关系": 0,
+          "个人收入": 0,
+          "公司分成比例": 70,
+          "粉丝购买力": 0,
+          "争议商业风险": 10,
+          "last_commercial_note": ""
+        },
+        "contract_terms": {
+          "合约剩余月数": 84,
+          "玩家续约意愿": 50,
+          "队友续约意向": 50,
+          "分成比例": 70,
+          "solo权限": 10,
+          "演员约权限": 10,
+          "创作署名权": 5,
+          "休假保障": 25,
+          "健康保障": 35,
+          "工作室可能性": 0,
+          "团体存续概率": 65,
+          "last_contract_note": ""
+        },
+        "career_branches": {
+          "acting_path_stage": "未开启",
+          "solo_path_stage": "未开启",
+          "unit_path_stage": "未开启",
+          "creative_path_stage": "未开启",
+          "rights_path_stage": "未开启",
+          "branch_opportunities": [],
+          "branch_history": []
+        },
+        "relationships": {
+          "经纪人": {
+            "name": "经纪人",
+            "role": "经纪组负责人",
+            "age": 32,
+            "is_minor": false,
+            "public_relation_state": "普通同期",
+            "private_relation_state": "普通同期",
+            "friendship": 19,
+            "trust": 20,
+            "dependence": 5,
+            "intimacy_comfort": 10,
+            "rivalry": 29,
+            "boundary_clarity": 55,
+            "care_memory": 0,
+            "shared_secret": 0,
+            "player_crush": 0,
+            "player_misread_probability": 10,
+            "player_expectation": 0,
+            "fear_of_ruining_friendship": 15,
+            "npc_romantic_interest_hidden": 40,
+            "npc_boundary_hidden": 71,
+            "npc_orientation_visibility": "未知",
+            "ambiguity": 0,
+            "business_cp_level": 0,
+            "cp_fandom_pressure": 0,
+            "relationship_risk": 0,
+            "cp_eligible": false,
+            "relationship_category": "peer",
+            "professional_role_category": "non_staff",
+            "role_viewpoint": "普通同龄关系：以同辈互动和个人关系为主。",
+            "professional_boundary_pressure": 0,
+            "last_signals": [
+              "竞争信号"
+            ],
+            "observed_clues": [],
+            "confirmed_state": "未确认"
+          }
+        },
+        "debut": {
+          "status": "not_ready",
+          "readiness": 13,
+          "probability": 0,
+          "window_turns_left": 0,
+          "last_evaluation_turn": 0,
+          "candidate_attempts": 0,
+          "last_result": "未进入出道候选窗口",
+          "history": [
+            {
+              "turn": 1,
+              "readiness": 13,
+              "probability": 0,
+              "result": "not_ready",
+              "reasons": [
+                "舞蹈/声乐/舞台感染力至少两项需要达到 35。"
+              ]
+            }
+          ]
+        }
+      },
+      "raw_response_excerpt": "```json\n{\n  \"narrative\": \"走廊里贴着本月考核的倒计时表，红色数字提醒着距离下次评估只剩二十五天。你深吸一口气，推开经纪组办公室的门，看见戴黑框眼镜的经纪人正对着电脑屏幕皱眉。\\n\\n“老师，我想问一下月末考核的事。”你尽量让声音听起来平静，“能不能在考核曲里争取一个更清晰的展示段落？比如舞蹈齐舞里的特写位置，或者评估录像里多一点镜头？”\\n\\n经纪人摘下眼镜，揉了揉鼻梁。办公室的空调嗡嗡响着，墙上贴着其他练习生的考核评分表，你的名字在最后一行，旁边是空白。\\n\\n“澄夏，你的舞蹈基础不错，老师们都说过。”她顿了顿，“但公司资源池现在很紧，课程、妆造、宣传都在压缩。考核展示位置不是我想给就能给的——每个练习生都在争，尤其是出道窗口压力大的时候。”\\n\\n她指向窗外练习室的方向：“你看见了吧？最近练习室排队时间变长了，声乐课也从一对一改成了小班。公司想用考核逼出状态，但机会就那么多。”\\n\\n你注意到她用了“逼出状态”这个词。办公室的百叶窗漏进一道光，照在桌上那份《练习生评估标准》上，你看见“镜头表现力”那一栏被红笔圈了起来。\\n\\n“我不是要特殊待遇，”你轻声说，“只是想确认，我有没有可能在考核里展示更多舞蹈方面的东西。”\\n\\n经纪人沉默了几秒，目光落在你身上。INFJ 的直觉让你捕捉到一丝犹豫——她似乎想说什么，但最终只是点了点头。\\n\\n“我会跟舞蹈老师提一下。但你要明白，考核位置是按综合数据排的，直拍传播力、课堂表现、团队配合都会算进去。你刚来，数据还是空白。”\\n\\n她重新戴上眼镜，语气缓和了一些：“先把声乐短板补上。公司风格偏数据，老师会更看重可量化的进步。”\\n\\n离开办公室时，你经过练习室门口，听见里面传来整齐的节拍声。透过玻璃，你看见几个练习生正在排练考核曲，领舞的女孩动作干净利落，旁边的男生跟着节奏点头。他们没看你。\\n\\n走廊尽头的公告栏上贴着新通知：本月考核将增加“团队协作评分”项。你盯着那行字，突然意识到，公司要的不只是个人能力，还有你在镜头前和别人配合时的样子。\",\n  \"npc_reactions\": [\n    {\n      \"name\": \"经纪人\",\n      \"role\": \"经纪组负责人\",\n      \"age\": 32,\n      \"reaction\": \"对你的请求表现出有限的理解，但明确表"
+    }
+  ]
+}

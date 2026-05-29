@@ -1189,6 +1189,10 @@ class GameMixin:
         ])
 
         company_children = [
+            self.text_line("公司规模", company.get("公司规模", "中型公司"), "contract", C["lavender"]),
+            self.text_line("公司路线", company.get("公司路线", "均衡培养"), "market", C["jade"]),
+            self.metric_bar("资源池", company.get("资源池", 50), "market", C["jade"]),
+            self.metric_bar("出道窗口压力", company.get("出道窗口压力", 45), "stage", C["apricot"], danger_high=True),
             self.metric_bar("公司满意度", company.get("公司满意度"), "contract", C["jade"]),
             self.metric_bar("公司信任度", company.get("公司信任度"), "staff_boundary", C["celadon"]),
             self.metric_bar("主推指数", company.get("主推指数"), "stage", C["lavender"]),
@@ -1272,7 +1276,7 @@ class GameMixin:
         crisis_children.append(self.chip_wrap([str(x) for x in list(getattr(s, "major_events", []) or [])[-10:]], C["apricot"], "暂无重大事件记录"))
 
         self.right_panel.controls.extend([
-            self.foldout_section("company", "contract", "公司与合约", f"满意 {company.get('公司满意度')} / 信任 {company.get('公司信任度')} / 资源 {company.get('资源倾斜度')}", company_children, True),
+            self.foldout_section("company", "contract", "公司与合约", f"{company.get('公司规模', '中型公司')} / 满意 {company.get('公司满意度')} / 资源池 {company.get('资源池', 50)}", company_children, True),
             self.foldout_section("team", "friendship", "团队关系", f"默契 {team.get('团队默契')} / 信任 {team.get('队内信任度')} / 疲劳 {team.get('营业疲劳')}", team_children, True),
             self.foldout_section("fans", "fans", "粉丝与舆论", f"黑粉 {fans.get('黑粉活跃度')} / 路人 {fans.get('路人好感')} / 撕裂 {fans.get('粉圈撕裂度')}", fans_children, False),
             self.foldout_section("risks", "safety", "风险系统", f"恋爱 {risks.get('恋爱风险')} / 私生 {risks.get('私生风险')} / 公关 {risks.get('公关危机风险')}", risk_children, True),

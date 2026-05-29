@@ -31,6 +31,76 @@ def mbti_letters(character: Dict[str, Any]) -> tuple[str, str, str, str, str]:
     return code, code[0], code[1], code[2], code[3]
 
 
+def normalize_company_size(character: Dict[str, Any]) -> str:
+    raw = str(character.get("公司规模") or character.get("公司类型") or "").strip()
+    identity = str(character.get("身份") or character.get("身份来源") or "")
+    tags = " ".join(map(str, character.get("出身来源标签", []) or []))
+    text = f"{raw} {identity} {tags}"
+    if any(k in text for k in ["大型", "大公司", "头部", "四大", "TOP", "top"]):
+        return "大型公司"
+    if any(k in text for k in ["小型", "小公司", "独立", "小厂"]):
+        return "小型公司"
+    return "中型公司"
+
+
+def apply_company_size_profile(state: GameState, character: Dict[str, Any], log: List[str]) -> None:
+    size = normalize_company_size(character)
+    profile = {
+        "大型公司": {
+            "公司路线": "高资源高竞争",
+            "资源池": 78,
+            "出道窗口压力": 70,
+            "公司满意度": 54,
+            "公司信任度": 48,
+            "主推指数": 38,
+            "资源倾斜度": 42,
+            "危机关注度": 18,
+            "合约稳定度": 78,
+            "个人议价权": 6,
+            "续约倾向": 54,
+        },
+        "中型公司": {
+            "公司路线": "均衡培养",
+            "资源池": 52,
+            "出道窗口压力": 48,
+            "公司满意度": 50,
+            "公司信任度": 45,
+            "主推指数": 35,
+            "资源倾斜度": 30,
+            "危机关注度": 10,
+            "合约稳定度": 70,
+            "个人议价权": 10,
+            "续约倾向": 50,
+        },
+        "小型公司": {
+            "公司路线": "低资源高自主",
+            "资源池": 28,
+            "出道窗口压力": 34,
+            "公司满意度": 46,
+            "公司信任度": 42,
+            "主推指数": 28,
+            "资源倾斜度": 18,
+            "危机关注度": 7,
+            "合约稳定度": 55,
+            "个人议价权": 18,
+            "续约倾向": 42,
+        },
+    }[size]
+    state.company["公司规模"] = size
+    for key, value in profile.items():
+        state.company[key] = value
+    if size == "大型公司":
+        state.team["队内竞争度"] = min(100, int(state.team.get("队内竞争度", 35)) + 8)
+        state.market["话题度"] = min(100, int(state.market.get("话题度", 15)) + 6)
+        log.append("大型公司：资源池更高、曝光和出道窗口更强，但队内竞争与危机关注同步上升。")
+    elif size == "小型公司":
+        state.market["销量潜力"] = max(0, int(state.market.get("销量潜力", 25)) - 5)
+        state.risks["公关危机风险"] = min(100, int(state.risks.get("公关危机风险", 5)) + 3)
+        log.append("小型公司：资源池更低、合约稳定度较弱，但个人议价权和自主空间更高。")
+    else:
+        log.append("中型公司：资源、竞争和风险保持均衡，公司规模会持续影响资源与出道节奏。")
+
+
 def parse_profile_tags(character: Dict[str, Any]) -> List[str]:
     tags: List[str] = []
     identity = str(character.get("身份", ""))
@@ -104,6 +174,8 @@ def allocate_initial_state(state: GameState, character: Dict[str, Any]) -> None:
 
     state.profile_tags = profile_tags
     state.initial_allocation_log = log
+
+    apply_company_size_profile(state, character, log)
 
     state.talents = generate_talents(character)
 
