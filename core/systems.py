@@ -51,6 +51,7 @@ def evaluate_fandom_pr_system(state: GameState, action: str) -> List[SystemEvent
     events: List[SystemEvent] = []
     if any(w in action for w in ["回应", "澄清", "道歉", "声明", "不回应", "公关"]):
         events.append(ev("pr_response_window", "进入回应窗口", "warning", "public_relations", "你已经进入舆论回应窗口。回应方式会影响粉丝信任、公司满意度、黑粉活跃度和长期 public image。", {"公司与合约.危机关注度": 2}))
+        events.append(ev("crisis_pr_response_window", "公关危机回应窗口", "warning", "public_relations", "这不是普通沟通，而是危机生命周期的一部分。沉默、回应或错误回应都会改变长期后果。", {"风险.公关危机风险": 1}, tags=["public_relations", "crisis"]))
     if not state.is_trainee_stage() and state.fans.get("黑粉活跃度", 0) > 70:
         events.append(ev("fandom_anti_high", "黑粉高活跃", "warning", "fandom", "黑粉活跃度已经很高。旧片段、表情截图和舞台失误都容易被剪辑传播。", {"风险.公关危机风险": 4, "心理状态.精神压力": 2}))
     return events
@@ -72,7 +73,7 @@ def evaluate_love_safety_system(state: GameState, action: str) -> List[SystemEve
 def evaluate_comeback_system(state: GameState, action: str) -> List[SystemEvent]:
     events: List[SystemEvent] = []
     if state.is_trainee_stage():
-        if any(w in action for w in ["作词作曲训练", "练习用 demo", "出道组概念课"]):
+        if any(w in action for w in ["作词作曲训练", "练习用 demo", "出道组概念课", "写demo", "demo", "作词", "作曲", "创作"]):
             events.append(ev("trainee_creation_training", "练习生创作训练", "info", "creation", "你现在能做的是训练创作基本功，而不是决定正式回归。", {"职业属性.创作能力": 1, "心理状态.自我认同": 1}))
         return events
 

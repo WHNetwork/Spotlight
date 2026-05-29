@@ -41,7 +41,8 @@ def backend_rule_contract() -> Dict[str, object]:
         ],
         "model_rules": [
             "不要直接宣布 Python 判定型结果必然成功，例如一位、获奖、续约成功、转型成功；需要依据 system_events 和 game_state 写成候补、机会、谈判或后果。",
-            "suggested_diff 只能补充叙事造成的小幅变化；核心结算以 base_diff_calculated_by_python 与 system_diff_calculated_by_python 为准。",
+            "suggested_diff 只能补充叙事造成的小幅变化；核心结算以 base_diff_calculated_by_python 与 system_diff_calculated_by_python 为准；所有 suggested_diff 数值必须是整数，不要输出 0.5、1.5 这类小数。",
+            "如果玩家行动包含【本周安排】，本回合时间跨度是一周。普通事件写成周常训练/生活推进；重点事件写成这一周中的关键场景；危机事件写成危机在本周内爆发与处理；主线事件写成阶段节点在这一周内推进。",
             "npc_reactions 可以带 role 和 age 字段；出现明确新人物时写清姓名和身份，后端会据此建立关系档案。",
             "不要凭空塞固定默认人物；若出现新 NPC，必须让 ta 在剧情、反应或事件里自然登场。",
             "公司真实意图、NPC隐藏心动、内部培养方向等隐藏信息只能通过场景暗示，不要上帝视角直说。",
@@ -53,6 +54,7 @@ def backend_rule_contract() -> Dict[str, object]:
             "必须使用第二人称“你”。",
             "必须包含具体场景细节。",
             "必须体现至少一个状态后果或系统事件。",
+            "包含【本周安排】时，正文需要体现一周内的安排消耗、重点场景和结算余波，不能只写成一个瞬间动作。",
             "不得在 JSON 外输出文字或 Markdown 代码块。",
         ],
         "diff_categories": [
@@ -84,6 +86,14 @@ def build_messages(
     ch = state.character if isinstance(state.character, dict) else {}
     user_payload = {
         "instruction": "请根据当前 GameState、玩家行动、行动合法性检查、Python 规则事件和 diff 生成下一回合。只返回 JSON。",
+        "turn_time_contract": {
+            "has_weekly_plan": "【本周安排】" in validation.normalized_action,
+            "rule": "包含【本周安排】时，本回合按一周生成；route_info.turn_kind 只决定叙事重心和模型层级，不缩短这一周。",
+            "ordinary": "普通事件：写周常训练、生活、恢复和小摩擦的推进。",
+            "focus": "重点事件：写一周安排中被镜头放大的关键场景，同时交代其他安排的消耗。",
+            "crisis": "危机事件：写危机在这一周内爆发、处理和留下的余波。",
+            "mainline": "主线事件：写职业阶段节点在这一周内推进，但不越过 Python 尚未确认的结果。",
+        },
         "personality_guidance": {
             "mbti": ch.get("MBTI"),
             "mbti_profile": ch.get("MBTI人格倾向"),

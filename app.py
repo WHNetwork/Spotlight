@@ -22,6 +22,9 @@ class KpopApp(
         self.page.window_height = 860
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.theme = ft.Theme(font_family=FONT_CN)
+        app_icon = PROJECT_ROOT / "assets" / "app_icon.ico"
+        if app_icon.exists() and hasattr(self.page, "window"):
+            self.page.window.icon = str(app_icon)
         self.config = AppConfig()
         self.storage = SaveStorage()
         self.save_id: Optional[int] = None
@@ -33,6 +36,8 @@ class KpopApp(
         self.custom_input = ft.TextField(label="自定义行动", multiline=True, min_lines=2, max_lines=4, expand=True)
         self.is_generating = False
         self.choice_buttons = []
+        self.weekly_plan_selected: list[str] = []
+        self.weekly_plan_controls = []
         self.submit_button = None
         self.thinking_banner = None
         self.bgm_audio = None

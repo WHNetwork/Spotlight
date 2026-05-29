@@ -34,8 +34,9 @@ from core.school_family import evaluate_school_family
 from core.skill_decay_system import ensure_skill_decay_state, evaluate_skill_decay_system
 from core.social_context import evaluate_social_context
 from core.systems import classify_turn, evaluate_all_systems
-from core.time_system import advance_time
+from core.time_system import advance_time, determine_turn_duration_days
 from core.trainee_life_system import ensure_trainee_life_state, evaluate_trainee_life_system
+from core.weekly_plan import compose_action_with_weekly_plan, normalize_weekly_plan_keys, weekly_plan_context, weekly_plan_options
 
 
 def event_codes(events) -> set[str]:
@@ -165,6 +166,55 @@ class ActivityDiffRulesTest(unittest.TestCase):
 
 
 class TimeSlotAndScheduleRulesTest(unittest.TestCase):
+    def test_trainee_weekly_plan_ui_contract_is_four_fixed_three_optional(self) -> None:
+        state = make_state(trainee=True)
+        context = weekly_plan_context(state)
+        options = weekly_plan_options(state)
+        selected = normalize_weekly_plan_keys(
+            state,
+            ["dance_extra", "vocal_extra", "creative_demo", "company_observe"],
+        )
+        action = compose_action_with_weekly_plan("我按本周计划推进。", state, selected)
+        events, diff = evaluate_trainee_life_system(state, action)
+
+        self.assertEqual(context["weekly_slots_total"], 7)
+        self.assertEqual(context["mandatory_slots"], 4)
+        self.assertEqual(context["free_slots"], 3)
+        self.assertEqual(selected, ["dance_extra", "vocal_extra", "creative_demo"])
+        self.assertTrue(any(option.key == "dance_extra" for option in options))
+        self.assertIn("【本周安排】", action)
+        self.assertIn("自选3/3格", action)
+        self.assertNotIn("trainee_week_overbooked", event_codes(events))
+        self.assertEqual(diff, {})
+
+    def test_trainee_weekly_plan_plus_extra_action_can_overbook(self) -> None:
+        state = make_state(trainee=True)
+        selected = ["dance_extra", "vocal_extra", "creative_demo"]
+        action = compose_action_with_weekly_plan("白天还要学校考试。", state, selected)
+        events, diff = evaluate_trainee_life_system(state, action)
+
+        self.assertIn("trainee_week_overbooked", event_codes(events))
+        self.assertEqual(state.trainee_life["last_slot_usage"]["学校"], 1)
+        self.assertEqual(diff["身体状态.体力"], -4)
+
+    def test_idol_weekly_plan_ui_contract_is_two_fixed_five_optional(self) -> None:
+        state = make_state(trainee=False)
+        context = weekly_plan_context(state)
+        selected = normalize_weekly_plan_keys(
+            state,
+            ["comeback_stage", "brand_magazine", "fan_work", "creative_work", "recovery", "maintenance_training"],
+        )
+        action = compose_action_with_weekly_plan("我按出道后的本周安排推进。", state, selected)
+        events, diff = evaluate_trainee_life_system(state, action)
+
+        self.assertEqual(context["weekly_slots_total"], 7)
+        self.assertEqual(context["mandatory_slots"], 2)
+        self.assertEqual(context["free_slots"], 5)
+        self.assertEqual(selected, ["comeback_stage", "brand_magazine", "fan_work", "creative_work", "recovery"])
+        self.assertIn("自选5/5格", action)
+        self.assertNotIn("idol_week_overbooked", event_codes(events))
+        self.assertEqual(diff, {})
+
     def test_trainee_slots_are_four_fixed_three_optional_and_overbook_costs_values(self) -> None:
         state = make_state(trainee=True)
         events, diff = evaluate_trainee_life_system(
@@ -230,6 +280,21 @@ class TimeSlotAndScheduleRulesTest(unittest.TestCase):
         self.assertEqual(state.time["days_elapsed"], 7)
         self.assertIn("time_monthly_evaluation_due", event_codes(events))
         self.assertEqual(diff["公司与合约.危机关注度"], 1)
+
+    def test_weekly_plan_keeps_focus_turn_at_one_week(self) -> None:
+        state = make_state(trainee=True)
+        selected = ["dance_extra", "vocal_extra", "creative_demo"]
+        action = compose_action_with_weekly_plan("我准备demo和月末考核重点展示。", state, selected)
+        route = classify_turn(action, state)
+
+        self.assertEqual(route.turn_kind, "focus")
+        self.assertEqual(determine_turn_duration_days(route, action), 7)
+
+        events, _, days = advance_time(state, route, action)
+        self.assertEqual(days, 7)
+        self.assertEqual(state.time["turn_duration_days"], 7)
+        self.assertEqual(state.time["days_elapsed"], 7)
+        self.assertIn("time_advanced", event_codes(events))
 
 
 class StateEntryExitRulesTest(unittest.TestCase):

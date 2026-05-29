@@ -45,6 +45,8 @@ def validate_action(state: GameState, action: str) -> ActionValidationResult:
     text = action.strip()
     lower = text.lower()
     result = ActionValidationResult(original_action=action, normalized_action=action)
+    weekly_marker = "【本周安排】"
+    gate_text = text.split(weekly_marker, 1)[0] if weekly_marker in text else text
 
     # 强制健康闸门
     if state.body.get("体力", 100) < 20 and any(w in text for w in HIGH_INTENSITY_WORDS):
@@ -75,22 +77,22 @@ def validate_action(state: GameState, action: str) -> ActionValidationResult:
     is_trainee = state.is_trainee_stage()
 
     if is_trainee:
-        if any(w in text for w in SOLO_WORDS):
+        if any(w in gate_text for w in SOLO_WORDS):
             result.warnings.append("练习生阶段不能进行 solo / 单飞 / 演员转型。行动已转化为个人展示与职业方向探索。")
             result.normalized_action = "我想在练习生阶段争取一次个人展示机会，并向老师询问我的长期职业定位。"
             result.system_events.append(_event("action_stage_rewrite_solo", "阶段门控：solo 行动已降级", "练习生阶段的 solo/单飞/转型请求被改写为个人展示机会与职业定位咨询。"))
 
-        elif any(w in text for w in FORMAL_RESOURCE_WORDS):
-            result.warnings.append("练习生阶段没有正式 MV 镜头、打歌 center 或回归 part。行动已转化为月末考核展示位置/评估录像机会。")
+        elif any(w in gate_text for w in FORMAL_RESOURCE_WORDS):
+            result.warnings.append("练习生阶段没有成片镜头、打歌 center 或回归 part。行动已转化为月末考核展示位置/评估录像机会。")
             result.normalized_action = "我向老师和经纪人询问月末考核展示位置、评估录像表现机会，以及自己能否在考核曲里承担更清晰的展示段落。"
             result.system_events.append(_event("action_stage_rewrite_resource", "阶段门控：正式资源行动已降级", "正式爱豆资源请求被改写为练习生考核展示机会。"))
 
-        elif any(w in text for w in COMEBACK_WORDS):
+        elif any(w in gate_text for w in ["回归", "主打", "正式概念", "正式风格", "决定概念", "决定风格"]):
             result.warnings.append("练习生阶段不能决定正式回归风格。行动已转化为作词作曲训练、demo 练习或出道组概念课。")
             result.normalized_action = "我想参加作词作曲训练，尝试写一个练习用 demo，并询问老师公司对出道组概念课的要求。"
             result.system_events.append(_event("action_stage_rewrite_comeback", "阶段门控：回归制作行动已降级", "正式回归制作请求被改写为练习生创作训练和出道组概念学习。"))
 
-        elif any(w in text for w in FORMAL_IDOL_FORBIDDEN):
+        elif any(w in gate_text for w in FORMAL_IDOL_FORBIDDEN):
             raise ActionBlockedError(
                 "当前仍是练习生阶段，不能执行正式爱豆阶段行为，如打歌、一位、大赏、续约、代言、演唱会等。",
                 ["询问月末考核安排", "争取练习生评估展示机会", "向老师请教定位", "处理练习生阶段的人际关系"]

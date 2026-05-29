@@ -70,17 +70,17 @@ def update_crises(state: GameState, action: str, system_events: List[SystemEvent
         ignore_words = ["沉默", "不回应", "算了", "装没事", "硬撑"]
 
         if crisis.crisis_type in {"public_relations", "team_pr"}:
-            if any(w in action for w in respond_words):
+            if any(w in action for w in ignore_words):
+                crisis.heat = min(100, crisis.heat + 10)
+                _add(diff, "风险.公关危机风险", 4)
+                _add(diff, "心理状态.精神压力", 3)
+            elif any(w in action for w in respond_words):
                 crisis.heat = max(0, crisis.heat - 18)
                 crisis.company_involvement = min(100, crisis.company_involvement + 15)
                 crisis.player_response = "已回应"
                 crisis.stage = "aftermath" if crisis.heat < 45 else "response_window"
                 _add(diff, "粉丝与舆论.粉丝信任基础", 3)
                 _add(diff, "风险.公关危机风险", -6)
-            elif any(w in action for w in ignore_words):
-                crisis.heat = min(100, crisis.heat + 10)
-                _add(diff, "风险.公关危机风险", 4)
-                _add(diff, "心理状态.精神压力", 3)
             else:
                 crisis.heat = max(0, crisis.heat - 3)
 

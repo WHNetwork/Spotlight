@@ -2,7 +2,21 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def _coerce_int_diff(value: Any) -> Dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    fixed: Dict[str, int] = {}
+    for key, raw in value.items():
+        try:
+            if isinstance(raw, bool):
+                continue
+            fixed[str(key)] = int(round(float(raw)))
+        except (TypeError, ValueError):
+            continue
+    return fixed
 
 
 class Choice(BaseModel):
@@ -26,6 +40,11 @@ class SystemEvent(BaseModel):
     suggested_diff: Dict[str, int] = Field(default_factory=dict)
     new_flags: List[str] = Field(default_factory=list)
     tags: List[str] = Field(default_factory=list)
+
+    @field_validator("suggested_diff", mode="before")
+    @classmethod
+    def coerce_suggested_diff(cls, value: Any) -> Dict[str, int]:
+        return _coerce_int_diff(value)
 
 
 class ActiveCrisis(BaseModel):
@@ -59,6 +78,11 @@ class TurnResponse(BaseModel):
     resolved_flags: List[str] = Field(default_factory=list)
     public_summary: str = ""
     private_notes: str = ""
+
+    @field_validator("suggested_diff", mode="before")
+    @classmethod
+    def coerce_suggested_diff(cls, value: Any) -> Dict[str, int]:
+        return _coerce_int_diff(value)
 
 
 class GameState(BaseModel):
@@ -498,7 +522,7 @@ class GameState(BaseModel):
 
     def is_trainee_stage(self) -> bool:
         text = f"{self.current_stage} {self.current_mainline} {self.current_schedule}"
-        return "练习生" in text or "初入公司" in text or "报到" in text
+        return "练习生" in text or "初入公司" in text or "报到" in text or "出道准备" in text
 
     def as_prompt_dict(self) -> Dict[str, Any]:
         return {

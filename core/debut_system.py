@@ -121,6 +121,8 @@ def readiness_to_probability(readiness: int) -> int:
 def should_evaluate_debut(state: GameState, action: str) -> bool:
     if not state.is_trainee_stage():
         return False
+    if any(w in action for w in ["不问出道", "暂时不问出道", "不讨论出道", "暂不讨论出道"]):
+        return False
     if any(w in action for w in ["出道", "候选", "公司会议", "出道组", "月末考核", "季度评估"]):
         return True
     return int(state.turn) > 0 and int(state.turn) % 24 == 0
@@ -138,6 +140,8 @@ def evaluate_debut_system(state: GameState, action: str) -> Tuple[List[SystemEve
 
     passed, reasons = hard_gate_passed(state)
     readiness = debut_readiness_score(state)
+    if passed and any(w in action for w in ["出道", "候选", "公司会议", "出道组", "季度评估"]):
+        readiness = max(readiness, 50)
     probability = readiness_to_probability(readiness) if passed else 0
     state.debut["readiness"] = readiness
     state.debut["probability"] = probability

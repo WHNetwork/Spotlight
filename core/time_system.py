@@ -81,6 +81,8 @@ def determine_turn_duration_days(route: RouteInfo, action: str) -> int:
         return 30
     if any(w in action for w in ["快进一周", "周总结"]):
         return 7
+    if "【本周安排】" in action:
+        return 7
     if route.turn_kind == "crisis":
         return 1
     if route.turn_kind == "focus":

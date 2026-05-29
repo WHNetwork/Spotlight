@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import Any, Dict, List, Tuple
 from core.models import GameState, SystemEvent
 
@@ -149,6 +150,26 @@ def known_relationship_names(state: GameState) -> List[str]:
     return names
 
 
+def _infer_named_target_from_action(action: str) -> str | None:
+    stop_names = {
+        "公司", "老师", "经纪人", "制作人", "工作人员", "队友", "同期", "粉丝",
+        "宿舍", "练习室", "考核", "热水", "资源", "镜头", "舞台", "我",
+        "他的", "她的", "我的", "你的",
+    }
+    patterns = [
+        r"(?:对|和|跟|与)?([\u4e00-\u9fff]{1,2}PD)(?:的|在|陪|帮|和我|跟我|与我|对我|给我|把|被|产生)",
+        r"([\u4e00-\u9fff]{2,4})(?:在|陪|帮|和我|跟我|与我|对我|给我|把|被)",
+        r"(?:和|跟|与)([\u4e00-\u9fff]{2,4})(?:的|一起|比较|谈心|练习)",
+    ]
+    for pattern in patterns:
+        for match in re.finditer(pattern, action):
+            name = match.group(1).strip()
+            name = name.lstrip("我对和跟与")
+            if name and name not in stop_names and not _is_generic_npc_name(name):
+                return name
+    return None
+
+
 def register_known_npc(state: GameState, name: str, role: str = "剧情人物", age: int | None = None) -> bool:
     name = str(name or "").strip()
     if _is_generic_npc_name(name):
@@ -218,7 +239,12 @@ def ensure_default_relationships(state: GameState) -> None:
 
 def find_relationship_target(state: GameState, action: str) -> str | None:
     ensure_default_relationships(state)
-    for name in known_relationship_names(state):
+    inferred = _infer_named_target_from_action(action)
+    if inferred and inferred in action:
+        if inferred not in state.relationships:
+            register_known_npc(state, inferred, infer_role_from_text(inferred, action))
+        return inferred
+    for name in sorted(known_relationship_names(state), key=len, reverse=True):
         if name and name in action:
             return name
     return None
@@ -662,7 +688,7 @@ def evaluate_relationship_system(state: GameState, action: str, fallback_target:
         rel["last_signals"].append("风险信号")
 
     if "rivalry" in signals:
-        rel["rivalry"] = clamp(int(rel.get("rivalry", 0)) + 4)
+        rel["rivalry"] = clamp(int(rel.get("rivalry", 0)) + 6)
         rel["friendship"] = clamp(int(rel.get("friendship", 0)) - 1)
         _add(diff, "团队关系.队内竞争度", 2)
         events.append(_event(

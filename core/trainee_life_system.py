@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Tuple
 
 from core.models import GameState, SystemEvent
@@ -75,15 +76,32 @@ def _slot_usage(action: str) -> Dict[str, int]:
     return {k: v for k, v in usage.items() if v > 0}
 
 
+def _explicit_weekly_plan_slots(action: str) -> tuple[int | None, str, str]:
+    marker = "【本周安排】"
+    if marker not in action:
+        return None, action, ""
+    before, after = action.split(marker, 1)
+    match = re.search(r"自选\s*(\d+)\s*/\s*(\d+)\s*格", after)
+    if not match:
+        return None, before, after
+    return int(match.group(1)), before, after
+
+
 def evaluate_trainee_life_system(state: GameState, action: str) -> Tuple[List[SystemEvent], Dict[str, int]]:
     ensure_trainee_life_state(state)
     events: List[SystemEvent] = []
     diff: Dict[str, int] = {}
 
     tl = state.trainee_life
+    explicit_slots, base_action, plan_action = _explicit_weekly_plan_slots(action)
     usage = _slot_usage(action)
     tl["last_slot_usage"] = usage
-    used_slots = sum(usage.values())
+    if explicit_slots is None:
+        used_slots = sum(usage.values())
+    else:
+        # UI-selected weekly plans count each selected free slot exactly once.
+        # Extra prose outside the plan can still consume additional slots.
+        used_slots = explicit_slots + sum(_slot_usage(base_action).values())
     free_slots = int(tl.get("free_slots", 3))
     notes: List[str] = list(tl.get("recent_life_notes", []))
 

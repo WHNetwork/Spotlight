@@ -77,6 +77,9 @@ def evaluate_market_score_system(state: GameState, action: str) -> Tuple[List[Sy
     risks = state.risks
     comeback = state.comeback
     ms = state.market_scores
+    old_audio = int(ms.get("音源成绩", 0))
+    old_music_show = int(ms.get("音乐节目分数", 0))
+    old_first_win = int(ms.get("一位概率", 0))
 
     controversy_penalty = int(risks.get("公关危机风险", 0)) // 4 + int(comp.get("危机关注度", 0)) // 5
     company_boost = int(comp.get("资源池", 50)) // 5 + int(comp.get("资源倾斜度", 30)) // 6
@@ -91,6 +94,12 @@ def evaluate_market_score_system(state: GameState, action: str) -> Tuple[List[Sy
     voting = clamp(0.45 * fan_base + 0.28 * int(fans.get("粉丝信任基础", 50)) + 0.27 * int(fans.get("站姐稳定度", 50)) - int(fans.get("粉圈撕裂度", 0)) // 3)
     music_show = clamp(0.30 * audio + 0.25 * sales + 0.20 * voting + 0.15 * mv + 0.10 * int(m.get("话题度", 15)) - controversy_penalty)
     first_win = clamp((music_show - 45) * 2)
+    if audio == old_audio:
+        audio = clamp(audio + (1 if audio < 100 else -1))
+    if music_show == old_music_show:
+        music_show = clamp(music_show + (1 if music_show < 100 else -1))
+    if first_win == old_first_win:
+        first_win = clamp(first_win + (1 if first_win < 100 else -1))
 
     ms.update({
         "音源成绩": int(audio),

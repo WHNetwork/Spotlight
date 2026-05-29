@@ -79,7 +79,7 @@ def _recalculate_bargaining_power(state: GameState) -> None:
     commercial = state.commercial
     contract = state.contract_terms
     market_scores = getattr(state, "market_scores", {}) if isinstance(getattr(state, "market_scores", None), dict) else {}
-    score = (
+    computed = (
         int(state.market.get("品牌价值", 0))
         + int(commercial.get("商业安全度", 0)) // 2
         + int(commercial.get("粉丝购买力", 0)) // 2
@@ -88,6 +88,11 @@ def _recalculate_bargaining_power(state: GameState) -> None:
         - int(commercial.get("争议商业风险", 0)) // 2
         - int(state.body.get("伤病风险", 0)) // 4
     )
+    existing = state.company.get("个人议价权")
+    if existing is None:
+        score = computed
+    else:
+        score = int(round(0.60 * int(existing) + 0.40 * computed))
     state.company["个人议价权"] = clamp(score)
     contract["团体存续概率"] = clamp(45 + int(state.team.get("团队默契度", 45)) // 3 + int(state.fans.get("团粉稳定度", 50)) // 4 - int(state.team.get("队内竞争度", 35)) // 4)
 

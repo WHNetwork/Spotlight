@@ -6,12 +6,259 @@ from ui.shared import *
 class GameMixin:
     def show_save_list(self) -> None:
         self.clear()
-        saves = self.storage.list_saves()
-        rows = []
-        for item in saves:
-            sid = item["id"]
-            rows.append(ft.ListTile(title=ft.Text(f'{item["name"]}'), subtitle=ft.Text(f'ID {sid} · 更新时间 {item["updated_at"]}'), trailing=ft.Icon(icon("CHEVRON_RIGHT")), on_click=lambda e, save_id=sid: self.load_save_by_id(save_id)))
-        self.page.add(ft.Container(content=ft.Column([ft.Text("存档列表", size=28, weight=ft.FontWeight.BOLD), ft.Column(rows) if rows else ft.Text("暂无存档。"), ft.OutlinedButton("返回首页", on_click=lambda e: self.show_home())], spacing=12, scroll=ft.ScrollMode.AUTO), padding=24))
+        self.page.padding = 0
+        self.page.bgcolor = ft.Colors.WHITE
+
+        try:
+            saves = self.storage.list_saves()
+        except Exception:
+            logger.exception("list_saves failed")
+            saves = []
+
+        vw = int(self.page.width or 1320)
+        vh = int(self.page.height or 860)
+        scale = max(0.74, min(1.12, min(vw / 1360, vh / 820)))
+
+        def r(value: float) -> int:
+            return max(1, int(value * scale))
+
+        def glass_button(label: str, icon_name: str, handler, fill: str | None = None):
+            return ft.Container(
+                height=r(42),
+                padding=ft.Padding(left=r(14), right=r(16), top=0, bottom=0),
+                border_radius=r(21),
+                bgcolor=ft.Colors.with_opacity(0.84, fill or ft.Colors.WHITE),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.70, ft.Colors.WHITE)),
+                shadow=ft.BoxShadow(
+                    blur_radius=r(20),
+                    spread_radius=0,
+                    color=ft.Colors.with_opacity(0.12, "#536B89"),
+                    offset=ft.Offset(0, r(8)),
+                ),
+                ink=True,
+                on_click=handler,
+                content=ft.Row([
+                    icon_image(icon_name, r(18), 0.9),
+                    ft.Text(label, size=r(12), color=C["ink"], weight=ft.FontWeight.W_700, font_family=FONT_CN),
+                ], spacing=r(7), alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            )
+
+        def chip(text: str, icon_name: str = "stage", color: str = "#9A8FC4"):
+            return ft.Container(
+                height=r(30),
+                padding=ft.Padding(left=r(9), right=r(11), top=0, bottom=0),
+                border_radius=r(15),
+                bgcolor=ft.Colors.with_opacity(0.52, ft.Colors.WHITE),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.42, ft.Colors.WHITE)),
+                content=ft.Row([
+                    ft.Container(
+                        icon_image(icon_name, r(14), 0.82),
+                        width=r(20),
+                        height=r(20),
+                        border_radius=r(10),
+                        bgcolor=ft.Colors.with_opacity(0.22, color),
+                        alignment=ft.Alignment.CENTER,
+                    ),
+                    ft.Text(str(text), size=r(10), color=C["dai"], font_family=FONT_CN, max_lines=1),
+                ], spacing=r(5), vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            )
+
+        def save_card(item: Dict[str, Any]):
+            sid = int(item["id"])
+            state = None
+            try:
+                state = self.storage.load_save(sid)
+                self.sync_runtime_context(state)
+            except Exception:
+                logger.exception("load save preview failed")
+
+            ch = state.character if state is not None and isinstance(state.character, dict) else {}
+            name = (ch.get("艺名") or ch.get("本名") or item.get("name") or f"存档 {sid}")
+            stage = state.current_stage if state is not None else "未知阶段"
+            mainline = state.current_mainline if state is not None else "暂无主线"
+            schedule = state.current_schedule if state is not None else "暂无行程"
+            turn = self.completed_turn_count(state) if state is not None else 0
+            age_text = self.age_status_text(state) if state is not None else "年龄未知"
+            company_size = "未知公司"
+            if state is not None and isinstance(state.company, dict):
+                company_size = str(state.company.get("公司规模") or "未知公司")
+            updated_at = str(item.get("updated_at") or "")
+            created_at = str(item.get("created_at") or "")
+            time_label = updated_at or created_at or "未知时间"
+            nationality = str(ch.get("国籍") or "")
+            card_w = max(r(330), min(r(410), int((vw - r(96)) / 3))) if vw >= 1120 else max(r(330), min(r(440), vw - r(56)))
+
+            return ft.Container(
+                width=card_w,
+                padding=ft.Padding(left=r(18), right=r(18), top=r(18), bottom=r(16)),
+                border_radius=r(28),
+                bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.72, ft.Colors.WHITE)),
+                shadow=ft.BoxShadow(
+                    blur_radius=r(30),
+                    spread_radius=0,
+                    color=ft.Colors.with_opacity(0.16, "#536B89"),
+                    offset=ft.Offset(0, r(12)),
+                ),
+                ink=True,
+                on_click=lambda e, save_id=sid: self.load_save_by_id(save_id),
+                content=ft.Column([
+                    ft.Row([
+                        ft.Container(
+                            width=r(74),
+                            height=r(74),
+                            border_radius=r(26),
+                            padding=r(3),
+                            bgcolor=ft.Colors.with_opacity(0.50, "#F7ECEE"),
+                            border=ft.Border.all(1, ft.Colors.with_opacity(0.68, ft.Colors.WHITE)),
+                            content=ft.Image(src=avatar_src_from_character(ch), fit="cover", border_radius=r(23)),
+                        ),
+                        ft.Column([
+                            ft.Text(str(name), size=r(18), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN, max_lines=1),
+                            ft.Text(str(stage), size=r(12), color=C["lavender"], font_family=FONT_CN, max_lines=1),
+                            ft.Row([
+                                ft.Container(
+                                    ft.Image(src=flag_src_from_nationality(nationality), width=r(18), height=r(18), fit="contain"),
+                                    width=r(22),
+                                    height=r(22),
+                                    border_radius=r(11),
+                                    bgcolor=ft.Colors.with_opacity(0.45, ft.Colors.WHITE),
+                                    alignment=ft.Alignment.CENTER,
+                                ),
+                                ft.Text(f"ID {sid:03d}", size=r(10), color=ft.Colors.with_opacity(0.72, C["sub"]), font_family=FONT_EN),
+                            ], spacing=r(7), vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        ], spacing=r(3), expand=True),
+                        ft.Container(
+                            width=r(42),
+                            height=r(42),
+                            border_radius=r(21),
+                            bgcolor=ft.Colors.with_opacity(0.42, "#F7ECEE"),
+                            alignment=ft.Alignment.CENTER,
+                            content=icon_image("save_archive", r(24), 0.92),
+                        ),
+                    ], spacing=r(14), vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.Container(height=r(4)),
+                    ft.Text(str(mainline), size=r(14), color=C["ink"], weight=ft.FontWeight.W_600, font_family=FONT_CN, max_lines=1),
+                    ft.Text(str(schedule), size=r(12), color=C["sub"], font_family=FONT_CN, max_lines=2),
+                    ft.Row([
+                        chip(f"已完成 {turn} 回合", "schedule", C["jade"]),
+                        chip(age_text, "new_character", C["lotus"]),
+                    ], spacing=r(8), wrap=True),
+                    ft.Row([
+                        chip(company_size, "contract", C["apricot"]),
+                        chip(f"更新 {time_label}", "diary", C["peach"]),
+                    ], spacing=r(8), wrap=True),
+                    ft.Container(
+                        height=r(44),
+                        border_radius=r(22),
+                        bgcolor=ft.Colors.with_opacity(0.78, "#F7ECEE"),
+                        border=ft.Border.all(1, ft.Colors.with_opacity(0.56, ft.Colors.WHITE)),
+                        alignment=ft.Alignment.CENTER,
+                        content=ft.Row([
+                            ft.Text("读取这段旅程", size=r(12), color=C["ink"], weight=ft.FontWeight.W_700, font_family=FONT_CN),
+                            ft.Text("LOAD", size=r(10), color=ft.Colors.with_opacity(0.62, C["dai"]), font_family=FONT_EN, italic=True),
+                        ], spacing=r(8), alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ),
+                ], spacing=r(12)),
+            )
+
+        cards = [save_card(item) for item in saves]
+
+        header = ft.Container(
+            padding=ft.Padding(left=r(34), right=r(34), top=r(26), bottom=r(12)),
+            content=ft.Row([
+                ft.Container(
+                    width=r(66),
+                    height=r(66),
+                    border_radius=r(22),
+                    padding=r(5),
+                    bgcolor=ft.Colors.with_opacity(0.56, ft.Colors.WHITE),
+                    border=ft.Border.all(1, ft.Colors.with_opacity(0.78, ft.Colors.WHITE)),
+                    shadow=ft.BoxShadow(blur_radius=r(22), color=ft.Colors.with_opacity(0.14, "#536B89"), offset=ft.Offset(0, r(8))),
+                    content=ft.Image(src=asset("app_icon.png"), fit="cover", border_radius=r(18)),
+                ),
+                ft.Column([
+                    ft.Text("存档剧场", size=r(30), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+                    ft.Text("选择一段已经写下的练习室旅程", size=r(13), color=C["sub"], font_family=FONT_CN),
+                ], spacing=2, expand=True),
+                glass_button("返回首页", "app_logo", lambda e: self.show_home()),
+                glass_button("新的人生", "new_character", lambda e: self.show_character_create(), "#F7ECEE"),
+            ], spacing=r(14), vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        )
+
+        if cards:
+            body = ft.Column([
+                ft.Container(
+                    padding=ft.Padding(left=r(34), right=r(34), top=r(12), bottom=r(10)),
+                    content=ft.Row([
+                        ft.Text(f"{len(cards)} 个存档", size=r(12), color=C["dai"], weight=ft.FontWeight.W_700, font_family=FONT_CN),
+                        ft.Container(expand=True),
+                        ft.Text("点击卡片即可读取", size=r(11), color=ft.Colors.with_opacity(0.72, C["sub"]), font_family=FONT_CN),
+                    ]),
+                ),
+                ft.Container(
+                    expand=True,
+                    padding=ft.Padding(left=r(34), right=r(34), top=r(4), bottom=r(34)),
+                    content=ft.Column([
+                        ft.Row(cards, wrap=True, spacing=r(18), run_spacing=r(18)),
+                    ], scroll=ft.ScrollMode.AUTO, expand=True),
+                ),
+            ], expand=True, spacing=0)
+        else:
+            body = ft.Container(
+                expand=True,
+                alignment=ft.Alignment.CENTER,
+                padding=r(28),
+                content=ft.Container(
+                    width=min(r(560), vw - r(44)),
+                    padding=ft.Padding(left=r(30), right=r(30), top=r(28), bottom=r(28)),
+                    border_radius=r(32),
+                    bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE),
+                    border=ft.Border.all(1, ft.Colors.with_opacity(0.75, ft.Colors.WHITE)),
+                    shadow=ft.BoxShadow(blur_radius=r(32), color=ft.Colors.with_opacity(0.15, "#536B89"), offset=ft.Offset(0, r(12))),
+                    content=ft.Column([
+                        ft.Container(
+                            width=r(92),
+                            height=r(92),
+                            border_radius=r(32),
+                            padding=r(6),
+                            bgcolor=ft.Colors.with_opacity(0.48, "#F7ECEE"),
+                            content=ft.Image(src=asset("app_icon.png"), fit="cover", border_radius=r(26)),
+                        ),
+                        ft.Text("还没有存档", size=r(22), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN, text_align=ft.TextAlign.CENTER),
+                        ft.Text("创建角色后，第一段练习室记录会出现在这里。", size=r(13), color=C["sub"], font_family=FONT_CN, text_align=ft.TextAlign.CENTER),
+                        ft.Row([
+                            glass_button("创建角色", "new_character", lambda e: self.show_character_create(), "#F7ECEE"),
+                            glass_button("返回首页", "app_logo", lambda e: self.show_home()),
+                        ], spacing=r(10), alignment=ft.MainAxisAlignment.CENTER, wrap=True),
+                    ], spacing=r(14), horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                ),
+            )
+
+        page = ft.Stack([
+            ft.Container(
+                left=0,
+                top=0,
+                right=0,
+                bottom=0,
+                bgcolor="#F8F6FC",
+                image=ft.DecorationImage(src=asset("backgrounds/storage_bg.png"), fit="cover", opacity=1.0),
+            ),
+            ft.Container(left=0, top=0, right=0, bottom=0, bgcolor=ft.Colors.with_opacity(0.18, ft.Colors.WHITE)),
+            ft.Container(
+                left=0,
+                top=0,
+                right=0,
+                bottom=0,
+                content=ft.Column([header, body], expand=True, spacing=0),
+            ),
+        ], expand=True)
+
+        def _resize(e):
+            self.show_save_list()
+
+        self.page.on_resize = _resize
+        self.page.add(page)
         self.page.update()
 
     def load_save_by_id(self, save_id: int) -> None:
@@ -888,6 +1135,12 @@ class GameMixin:
             self.submit_button.text = "生成中……" if value else "提交行动"
         if self.custom_input is not None:
             self.custom_input.disabled = value
+        for control in getattr(self, "weekly_plan_controls", []) or []:
+            try:
+                control.disabled = value
+                control.opacity = 0.55 if value else 1
+            except Exception:
+                pass
         self.page.update()
 
     def show_game(self, initial: bool = False) -> None:
@@ -903,6 +1156,7 @@ class GameMixin:
         inner_panel_width = max(320, panel_width - 28)
         self.is_generating = False
         self.choice_buttons = []
+        self.weekly_plan_controls = []
         self.story_view = ft.Column(expand=True, spacing=16)
         self.left_panel = ft.Column(width=inner_panel_width, scroll=ft.ScrollMode.AUTO, spacing=12)
         self.right_panel = ft.Column(width=inner_panel_width, scroll=ft.ScrollMode.AUTO, spacing=12)
@@ -1303,10 +1557,103 @@ class GameMixin:
         self.choice_buttons.append(card)
         return card
 
+    def toggle_weekly_plan_option(self, key: str) -> None:
+        if self.is_generating or self.state is None:
+            return
+        selected = list(getattr(self, "weekly_plan_selected", []) or [])
+        if key in selected:
+            selected.remove(key)
+        else:
+            context = weekly_plan_context(self.state)
+            if len(selected) >= int(context.get("free_slots", 3)):
+                self.snack(f"本阶段最多选择 {context.get('free_slots', 3)} 个自选安排。")
+                return
+            selected.append(key)
+        self.weekly_plan_selected = normalize_weekly_plan_keys(self.state, selected)
+        self.refresh_choices()
+        self.page.update()
+
+    def weekly_plan_option_card(self, option, active: bool, compact: bool = False):
+        width = 132 if compact else 154
+        card = ft.Container(
+            width=width,
+            height=42,
+            padding=ft.Padding(left=10, right=10, top=7, bottom=7),
+            border_radius=18,
+            bgcolor=ft.Colors.with_opacity(0.86 if active else 0.50, "#F7ECEE" if active else ft.Colors.WHITE),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.68 if active else 0.42, C["lotus"] if active else C["line"])),
+            ink=True,
+            on_click=lambda e, k=option.key: self.toggle_weekly_plan_option(k),
+            content=ft.Row([
+                ft.Container(
+                    icon_image(option.icon_name, 17, 0.92 if active else 0.72),
+                    width=24,
+                    height=24,
+                    border_radius=12,
+                    bgcolor=ft.Colors.with_opacity(0.32 if active else 0.18, C["lotus"]),
+                    alignment=ft.Alignment.CENTER,
+                ),
+                ft.Column([
+                    ft.Text(option.label, size=11, color=C["ink"], weight=ft.FontWeight.W_700 if active else ft.FontWeight.W_600, font_family=FONT_CN, max_lines=1),
+                    ft.Text(option.category, size=9, color=ft.Colors.with_opacity(0.68, C["dai"]), font_family=FONT_CN, max_lines=1),
+                ], spacing=0, expand=True),
+            ], spacing=7, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        )
+        self.weekly_plan_controls.append(card)
+        return card
+
+    def weekly_plan_panel(self):
+        assert self.state is not None
+        context = weekly_plan_context(self.state)
+        selected_keys = normalize_weekly_plan_keys(self.state, getattr(self, "weekly_plan_selected", []) or [])
+        selected = set(selected_keys)
+        self.weekly_plan_selected = selected_keys
+        fixed = list(context.get("fixed_slot_plan", []) or [])
+        options = weekly_plan_options(self.state)
+        compact = int(self.page.width or 1320) < 1180
+        fixed_cards = [
+            ft.Container(
+                height=34,
+                padding=ft.Padding(left=10, right=12, top=0, bottom=0),
+                border_radius=17,
+                bgcolor=ft.Colors.with_opacity(0.46, ft.Colors.WHITE),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.40, ft.Colors.WHITE)),
+                content=ft.Row([
+                    icon_image("schedule", 14, 0.68),
+                    ft.Text(str(item), size=10, color=C["sub"], font_family=FONT_CN, max_lines=1),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            )
+            for item in fixed
+        ]
+        option_cards = [self.weekly_plan_option_card(option, option.key in selected, compact) for option in options]
+        selected_text = weekly_plan_summary(self.state, self.weekly_plan_selected)
+        return ft.Container(
+            padding=ft.Padding(left=12, right=12, top=10, bottom=10),
+            border_radius=22,
+            bgcolor=ft.Colors.with_opacity(0.46, "#FBFCFF"),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.52, C["line"])),
+            content=ft.Column([
+                ft.Row([
+                    self.section_title("schedule", "本周安排", f"固定 {context['mandatory_slots']} 格 · 自选 {len(selected)}/{context['free_slots']} 格"),
+                    ft.Container(expand=True),
+                    ft.Text("会自动写入本回合行动", size=10, color=ft.Colors.with_opacity(0.64, C["sub"]), font_family=FONT_CN),
+                ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Row(fixed_cards, wrap=True, spacing=7, run_spacing=7),
+                ft.Row(option_cards, wrap=True, spacing=8, run_spacing=8),
+                ft.Text(selected_text, size=10, color=C["sub"], font_family=FONT_CN, max_lines=2),
+            ], spacing=8),
+        )
+
+    def action_with_weekly_plan(self, action: str) -> str:
+        if self.state is None:
+            return action
+        return compose_action_with_weekly_plan(action, self.state, getattr(self, "weekly_plan_selected", []) or [])
+
     def refresh_choices(self) -> None:
         assert self.state is not None
         self.choice_row.controls.clear()
         self.choice_buttons = []
+        self.weekly_plan_controls = []
         cards = []
         for choice in self.state.current_choices:
             if choice.id.upper() == "E":
@@ -1319,7 +1666,8 @@ class GameMixin:
             style=ft.ButtonStyle(bgcolor=C["lavender"], color=ft.Colors.WHITE, shape=ft.RoundedRectangleBorder(radius=18), padding=ft.Padding(left=18, right=18, top=14, bottom=14)),
         )
         self.choice_row.controls.extend([
-            ft.Row([self.section_title("schedule", "下一步选择", "选择卡片或写下自定义行动")], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            self.weekly_plan_panel(),
+            ft.Row([self.section_title("stage", "下一步选择", "选择剧情卡片，或写下自定义行动")], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ft.Row(cards, wrap=True, spacing=8, run_spacing=8),
             ft.Row([self.custom_input, self.submit_button], spacing=10, vertical_alignment=ft.CrossAxisAlignment.END),
         ])
@@ -1330,8 +1678,11 @@ class GameMixin:
             return
         text = (self.custom_input.value or "").strip()
         if not text:
-            self.snack("请输入自定义行动。")
-            return
+            if getattr(self, "weekly_plan_selected", None):
+                text = "我按照本周安排推进训练、生活和恢复。"
+            else:
+                self.snack("请输入自定义行动，或先选择本周安排。")
+                return
         self.submit_action(f"E. {text}")
 
     def submit_action(self, action: str) -> None:
@@ -1342,6 +1693,7 @@ class GameMixin:
             self.snack("没有可用存档。")
             return
 
+        action = self.action_with_weekly_plan(action)
         self.set_generating(True)
         current_state = self.state
         current_save_id = self.save_id
@@ -1358,6 +1710,7 @@ class GameMixin:
                     narrative_text = "这一回合已经记录下来。练习室的灯还亮着，你可以先查看本回合总结，再决定下一步。"
                 self.set_story_pair(narrative_text, summary)
                 self.refresh_panels()
+                self.weekly_plan_selected = []
                 self.refresh_choices()
                 self.custom_input.value = ""
             except ActionBlockedError as exc:
