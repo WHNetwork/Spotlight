@@ -173,9 +173,9 @@ def allocate_initial_state(state: GameState, character: Dict[str, Any]) -> None:
 
     if mbti_e == "E":
         add(state.career, "综艺感", 3, log, "E型更主动表达和接梗", min(career_cap, 13 if "练习生" in timeline else career_cap))
-        state.team["团队默契"] += 2
+        state.team["团队默契度"] += 2
         state.risks["公关危机风险"] += 1
-        log.append("E型：团队互动更主动，镜头暴露和公关风险轻微上升。")
+        log.append("E型：团队默契度更高，镜头暴露和公关风险轻微上升。")
     else:
         add(state.career, "创作能力", 2, log, "I型更容易沉淀内心素材", min(career_cap, 10 if "练习生" in timeline else career_cap))
         state.mind["孤独感"] += 4
@@ -195,17 +195,17 @@ def allocate_initial_state(state: GameState, character: Dict[str, Any]) -> None:
     if mbti_j == "F":
         state.team["队内信任度"] += 3
         state.mind["精神压力"] += 3
-        state.inner_life["心事重量"] += 3
-        log.append("F型：共情和团队黏性更高，但内耗压力更容易累积。")
+        state.inner_life["秘密重量"] = min(100, int(state.inner_life.get("秘密重量", 10)) + 3)
+        log.append("F型：共情和团队黏性更高，秘密重量和内耗压力更容易累积。")
     else:
-        state.safety["boundary_awareness"] += 4
+        state.mind["边界感"] = min(100, int(state.mind.get("边界感", 40)) + 4)
         state.team["队内竞争度"] += 1
-        log.append("T型：边界意识更高，冲突表达更直接。")
+        log.append("T型：边界感更高，冲突表达更直接。")
 
     if mbti_l == "J":
         state.company["公司信任度"] += 3
         state.mind["精神压力"] += 2
-        state.schedule_profile["discipline_score"] += 4
+        state.schedule_profile["discipline_score"] = min(100, int(state.schedule_profile.get("discipline_score", 50)) + 4)
         log.append("J型：计划性和纪律性更强，公司信任上升，责任压力略高。")
     else:
         add(state.career, "舞台感染力", 2, log, "P型更依赖现场反应和即兴", min(career_cap, 13 if "练习生" in timeline else career_cap))
@@ -292,6 +292,67 @@ def allocate_initial_state(state: GameState, character: Dict[str, Any]) -> None:
         add(state.career, "语言能力", 2, log, "优渥教育资源带来语言基础", min(career_cap, 12 if "练习生" in timeline else career_cap))
         state.fans["黑粉活跃度"] += 3
         log.append("优渥家庭：课程资源略高，但关系户争议风险存在。")
+
+
+    if "素人发掘" in profile_tags or "适应期新人" in profile_tags:
+        state.company["公司信任度"] += 1
+        state.mind["精神压力"] += 2
+        log.append("素人/适应期新人：可塑性较高，但初入体系的压力略高。")
+
+    if "校园演出经验" in profile_tags:
+        add(state.career, "舞台感染力", 2, log, "校园演出带来基础舞台适应", min(career_cap, 12 if "练习生" in timeline else career_cap))
+
+    if "舞台经验" in profile_tags:
+        add(state.career, "舞台感染力", 4, log, "既有舞台经验提升舞台稳定性", min(career_cap, 16 if "练习生" in timeline else career_cap))
+
+    if "训练适应快" in profile_tags:
+        state.schedule_profile["discipline_score"] = min(100, int(state.schedule_profile.get("discipline_score", 50)) + 3)
+        add(state.career, "舞蹈实力", 1, log, "训练适应较快", min(career_cap, 12 if "练习生" in timeline else career_cap))
+        log.append("训练适应快：纪律分和基础训练吸收略高。")
+
+    if "既有流量" in profile_tags:
+        state.market["话题度"] += 10
+        state.fans["个人粉丝数"] += 1200
+        log.append("既有流量：初始话题度和个人粉丝数上升。")
+
+    if "黑粉争议风险" in profile_tags:
+        state.fans["黑粉活跃度"] += 7
+        state.risks["公关危机风险"] += 3
+        log.append("黑粉争议风险：黑粉活跃和公关风险上升。")
+
+    if "关系户争议风险" in profile_tags:
+        state.fans["黑粉活跃度"] += 5
+        state.mind["精神压力"] += 4
+        log.append("关系户争议风险：外部质疑带来黑粉和心理压力。")
+
+    if "公众审视压力" in profile_tags:
+        state.market["话题度"] += 6
+        state.mind["精神压力"] += 5
+        log.append("公众审视压力：话题度上升，同时精神压力上升。")
+
+    if "文化适应压力" in profile_tags:
+        state.mind["孤独感"] += 4
+        state.social_context["cultural_adaptation"] = max(0, int(state.social_context.get("cultural_adaptation", 55)) - 5)
+        log.append("文化适应压力：孤独感上升，文化适应度下降。")
+
+    if "纪律适应风险" in profile_tags:
+        state.schedule_profile["discipline_score"] = max(0, state.schedule_profile.get("discipline_score", 50) - 4)
+        state.company["公司信任度"] = max(0, state.company.get("公司信任度", 45) - 2)
+        log.append("纪律适应风险：纪律分和公司信任略降。")
+
+    if "体能优势" in profile_tags:
+        state.body["体力"] = min(100, int(state.body.get("体力", 70)) + 8)
+        log.append("体能优势：初始体力上升。")
+
+    if "旧伤风险" in profile_tags:
+        state.body["旧伤负担"] = min(100, int(state.body.get("旧伤负担", 0)) + 10)
+        state.body["伤病风险"] = min(100, int(state.body.get("伤病风险", 10)) + 5)
+        log.append("旧伤风险：旧伤负担和伤病风险上升。")
+
+    if "职业倦怠风险" in profile_tags:
+        state.mind["职业倦怠"] += 8
+        log.append("职业倦怠风险：开局职业倦怠更高。")
+
 
     # Weakness penalties.
     if "舞蹈短板" in profile_tags:

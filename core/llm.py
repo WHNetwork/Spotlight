@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Dict, List
 import httpx
 from loguru import logger
@@ -185,6 +186,233 @@ def _normalize_turn_response_data(data: dict) -> dict:
     return data
 
 
+def _clean_fenced_json(raw: str) -> str:
+    text = str(raw or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?", "", text, flags=re.IGNORECASE).strip()
+        text = re.sub(r"```$", "", text).strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end + 1]
+    return text
+
+
+def _scan_json_string_value(text: str, key: str) -> str:
+    """Extract a string value from malformed JSON.
+
+    It handles model outputs like:
+    "narrative": "他说："今天不休息？"她问。", "public_summary": ...
+    where inner quotes were not escaped.
+    """
+    key_pat = '"' + key + '"'
+    pos = text.find(key_pat)
+    if pos < 0:
+        return ""
+    colon = text.find(":", pos + len(key_pat))
+    if colon < 0:
+        return ""
+    i = colon + 1
+    n = len(text)
+    while i < n and text[i].isspace():
+        i += 1
+    if i >= n:
+        return ""
+
+    if text[i] != '"':
+        j = i
+        while j < n:
+            if text[j] == "," and re.match(r'\s*"[\w\u4e00-\u9fff_]+":', text[j + 1:]):
+                break
+            if text[j] == "}" and j > i:
+                break
+            j += 1
+        return text[i:j].strip().strip('"')
+
+    i += 1
+    out = []
+    esc = False
+    while i < n:
+        ch = text[i]
+        if esc:
+            if ch == "n":
+                out.append("\n")
+            elif ch == "t":
+                out.append("\t")
+            elif ch == "r":
+                out.append("\r")
+            else:
+                out.append(ch)
+            esc = False
+            i += 1
+            continue
+
+        if ch == "\\":
+            esc = True
+            i += 1
+            continue
+
+        if ch == '"':
+            j = i + 1
+            while j < n and text[j].isspace():
+                j += 1
+            if j >= n:
+                break
+            tail = text[j:]
+            if tail.startswith("}") or re.match(r',\s*"[\w\u4e00-\u9fff_]+":', tail):
+                break
+            # Inner unescaped quote inside prose/dialogue.
+            out.append(ch)
+            i += 1
+            continue
+
+        out.append(ch)
+        i += 1
+
+    return "".join(out).strip()
+
+
+def _extract_balanced_value_after_key(text: str, key: str):
+    key_pat = '"' + key + '"'
+    pos = text.find(key_pat)
+    if pos < 0:
+        return None
+    colon = text.find(":", pos + len(key_pat))
+    if colon < 0:
+        return None
+    i = colon + 1
+    n = len(text)
+    while i < n and text[i].isspace():
+        i += 1
+    if i >= n:
+        return None
+
+    if text[i] == '"':
+        return _scan_json_string_value(text, key)
+
+    if text[i] not in "[{":
+        j = i
+        while j < n:
+            if text[j] == "," and re.match(r'\s*"[\w\u4e00-\u9fff_]+":', text[j + 1:]):
+                break
+            if text[j] == "}" and j > i:
+                break
+            j += 1
+        raw_value = text[i:j].strip()
+        try:
+            return json.loads(raw_value)
+        except Exception:
+            return raw_value.strip('"')
+
+    open_ch = text[i]
+    close_ch = "]" if open_ch == "[" else "}"
+    depth = 0
+    in_str = False
+    esc = False
+    j = i
+    while j < n:
+        ch = text[j]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                k = j + 1
+                while k < n and text[k].isspace():
+                    k += 1
+                if k < n and text[k] not in [",", "}", "]", ":"]:
+                    pass
+                else:
+                    in_str = False
+            j += 1
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == open_ch:
+            depth += 1
+        elif ch == close_ch:
+            depth -= 1
+            if depth == 0:
+                raw_value = text[i:j + 1]
+                try:
+                    return json.loads(raw_value)
+                except Exception:
+                    return raw_value
+        j += 1
+    return None
+
+
+def _split_choice_items(raw: str) -> list:
+    if not raw:
+        return []
+    text = str(raw).strip()
+    choices = []
+    for match in re.finditer(r'\{(.*?)\}', text, flags=re.S):
+        obj = match.group(1)
+        obj_text = "{" + obj + "}"
+        cid = _scan_json_string_value(obj_text, "id") or _scan_json_string_value(obj_text, "key")
+        ctext = _scan_json_string_value(obj_text, "text") or _scan_json_string_value(obj_text, "content") or _scan_json_string_value(obj_text, "label")
+        if ctext:
+            choices.append({"id": cid or chr(ord("A") + min(len(choices), 4)), "text": ctext})
+    if choices:
+        return choices[:5]
+
+    for cid, ctext in re.findall(r'["\']?([A-E])["\']?\s*[:.、]\s*["\']?([^"\n,，]+)', text):
+        choices.append({"id": cid, "text": ctext.strip()})
+    return choices[:5]
+
+
+def _fallback_parse_turn_response_data(raw: str) -> dict:
+    text = _clean_fenced_json(raw)
+
+    narrative = (
+        _scan_json_string_value(text, "narrative")
+        or _scan_json_string_value(text, "推进情节")
+        or _scan_json_string_value(text, "story")
+        or _scan_json_string_value(text, "content")
+        or _scan_json_string_value(text, "text")
+    )
+    public_summary = (
+        _scan_json_string_value(text, "public_summary")
+        or _scan_json_string_value(text, "summary")
+        or _scan_json_string_value(text, "回合总结")
+        or _scan_json_string_value(text, "本回合总结")
+    )
+    private_notes = _scan_json_string_value(text, "private_notes") or _scan_json_string_value(text, "private")
+
+    choices_value = _extract_balanced_value_after_key(text, "choices")
+    if choices_value is None:
+        choices_value = _extract_balanced_value_after_key(text, "选项")
+    if isinstance(choices_value, list):
+        choices = choices_value
+    else:
+        choices = _split_choice_items(str(choices_value or ""))
+
+    suggested = _extract_balanced_value_after_key(text, "suggested_diff")
+    if not isinstance(suggested, dict):
+        suggested = _extract_balanced_value_after_key(text, "diff")
+    if not isinstance(suggested, dict):
+        suggested = {}
+
+    npc_value = _extract_balanced_value_after_key(text, "npc_reactions")
+    npc_reactions = npc_value if isinstance(npc_value, list) else []
+
+    new_flags = _extract_balanced_value_after_key(text, "new_flags")
+    resolved_flags = _extract_balanced_value_after_key(text, "resolved_flags")
+
+    return {
+        "narrative": narrative,
+        "public_summary": public_summary,
+        "private_notes": private_notes,
+        "choices": choices,
+        "suggested_diff": suggested,
+        "npc_reactions": npc_reactions,
+        "new_flags": new_flags if isinstance(new_flags, list) else [],
+        "resolved_flags": resolved_flags if isinstance(resolved_flags, list) else [],
+    }
+
+
 def parse_turn_response(raw: str) -> TurnResponse:
     text = raw.strip()
     if text.startswith("```"):
@@ -200,7 +428,13 @@ def parse_turn_response(raw: str) -> TurnResponse:
     try:
         data = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise LLMError(f"无法解析模型 JSON：{exc}\n原始内容：{raw[:1000]}") from exc
+        logger.warning(f"Strict JSON parse failed, using tolerant parser: {exc}")
+        try:
+            data = _fallback_parse_turn_response_data(raw)
+            if not _stringify_text(data.get("narrative")):
+                raise ValueError("tolerant parser did not recover narrative")
+        except Exception as fallback_exc:
+            raise LLMError(f"无法解析模型 JSON：{exc}\n原始内容：{raw[:1000]}") from fallback_exc
 
     data = _normalize_turn_response_data(data)
     result = TurnResponse.model_validate(data)

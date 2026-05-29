@@ -311,6 +311,7 @@ class GameState(BaseModel):
         "last_action_type": "none",
         "practice_quota_need": 0,
         "workload_pressure": 0,
+        "discipline_score": 50,
         "recent_schedule_notes": [],
     })
 

@@ -17,7 +17,7 @@ from core.initial_allocator import allocate_initial_state
 from core.abilities import update_abilities, ability_passive_diff
 from core.period_system import default_period_state, advance_period, evaluate_period_system
 from core.inner_life import default_inner_life, evaluate_inner_life
-from core.relationship_system import ensure_default_relationships, evaluate_relationship_system
+from core.relationship_system import ensure_default_relationships, evaluate_relationship_system, register_response_npcs
 from core.time_system import default_time_context, compute_age_group, advance_time
 from core.social_context import default_social_context, evaluate_social_context
 from core.school_family import default_school_context, default_family_context, evaluate_school_family
@@ -54,7 +54,8 @@ class TurnEngine:
         state.current_schedule = "第一天报到"
         state.next_milestone = "完成第一回合"
 
-        allocate_initial_state(state, character)
+        # 初始化基础上下文必须先于身份/MBTI分配器。
+        # 之前 allocate_initial_state() 写入的 social/family/safety 等效果会被 default_* 覆盖。
         state.social_context = default_social_context(character)
         state.school = default_school_context(state.age_context, character)
         state.family = default_family_context(state.age_context, character, state.social_context)
@@ -71,6 +72,8 @@ class TurnEngine:
         ensure_skill_decay_state(state)
         ensure_debut_state(state)
         ensure_ending_state(state)
+
+        allocate_initial_state(state, character)
 
         for tag in state.profile_tags:
             flag = f"身份标签：{tag}"
@@ -184,6 +187,17 @@ class TurnEngine:
         messages = build_messages(working_state, action, base_diff, system_diff, system_events, route_info, validation)
         raw = self.provider.generate(messages, model=actual_model)
         response = parse_turn_response(raw)
+        response_relationship_targets = register_response_npcs(working_state, response, action)
+        if not relationship_events and len(response_relationship_targets) == 1:
+            late_relationship_events, late_relationship_diff = evaluate_relationship_system(
+                working_state,
+                action,
+                fallback_target=response_relationship_targets[0],
+            )
+            relationship_events.extend(late_relationship_events)
+            system_events.extend(late_relationship_events)
+            for key, value in late_relationship_diff.items():
+                system_diff[key] = system_diff.get(key, 0) + value
 
         suggested = sanitize_suggested_diff(working_state, response.suggested_diff, action)
         suggested, suggested_progression_events, suggested_progression_diff = convert_growth_diff_to_progression(
