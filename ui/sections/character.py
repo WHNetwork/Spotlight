@@ -1123,9 +1123,20 @@ class CharacterMixin:
             normalized.data["基础数值倾向"] = raw_character.get("基础数值倾向", [])
             normalized.data["MBTI"] = raw_character.get("MBTI")
             normalized.data["MBTI人格倾向"] = raw_character.get("MBTI人格倾向")
-            engine = TurnEngine(self.storage, self.config)
-            state = engine.create_initial_state(normalized.data)
+
+            from core.initial_allocator import allocate_initial_state
+            state = GameState()
             state.save_name = self.character_save_name(normalized.data)
+            state.character = normalized.data
+            age = normalized.data.get("年龄")
+            try:
+                age = int(str(age).strip()) if age is not None else None
+            except Exception:
+                age = None
+            if age is not None:
+                state.time["age_years"] = age
+                state.time["age_months"] = age * 12
+            allocate_initial_state(state, normalized.data)
             self.save_id = self.storage.create_save(state)
             self.state = state
             self.show_game(initial=True)

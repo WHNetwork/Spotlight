@@ -560,12 +560,6 @@ class HomeMixin:
         return age if 1 <= age <= 80 else None
 
     def sync_runtime_context(self, state: GameState | None = None) -> None:
-        """Fix old/migrated saves before UI rendering.
-
-        state.turn is completed-turn count. The next selectable turn is turn + 1.
-        age_context is recomputed from character age/time age so UI never shows raw
-        booleans such as '未成年：False'.
-        """
         s = state or self.state
         if s is None:
             return
@@ -579,7 +573,26 @@ class HomeMixin:
         age = time_age if time_age is not None else char_age
         if age is not None:
             try:
-                s.age_context = compute_age_group(age)
+                if age < 12:
+                    group = "儿童"
+                elif age < 16:
+                    group = "青少年早期"
+                elif age < 18:
+                    group = "青少年"
+                elif age < 21:
+                    group = "青年"
+                elif age < 26:
+                    group = "成年"
+                else:
+                    group = "成熟"
+                is_minor = age < 18
+                s.age_context = {
+                    "age": age,
+                    "age_group": group,
+                    "is_minor": is_minor,
+                    "guardian_required": is_minor,
+                    "romance_allowed": age >= 18,
+                }
             except Exception:
                 pass
             try:
@@ -629,19 +642,17 @@ class HomeMixin:
 
 
     def display_group_name(self, state: GameState | None = None) -> str:
-        """练习生阶段显示“练习生”；出道/出道准备后显示组合名。"""
         s = state or self.state
         if s is None:
             return "练习生"
         ch = s.character if isinstance(s.character, dict) else {}
         debut = getattr(s, "debut", {}) or {}
-        comeback = getattr(s, "comeback", {}) or {}
 
         if s.is_trainee_stage():
             return "练习生"
 
         candidates = []
-        for source in [ch, debut, comeback]:
+        for source in [ch, debut]:
             if isinstance(source, dict):
                 for key in ["组合名", "团名", "出道组合", "组合", "group_name", "debut_group", "team_name"]:
                     val = str(source.get(key) or "").strip()

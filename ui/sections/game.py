@@ -351,8 +351,6 @@ class GameMixin:
     def relationship_card(self, name: str, rel: Dict[str, Any]) -> ft.Container:
         s = self.state
         role = str(rel.get("role") or "剧情人物")
-        label = public_relationship_label(rel, s) if s is not None else str(rel.get("public_relation_state") or "关系")
-        cp_allowed = bool(s is not None and is_cp_eligible(rel, s))
         metrics = [
             self.relationship_metric_bar("友情", rel.get("friendship"), C["jade"]),
             self.relationship_metric_bar("信任", rel.get("trust"), C["celadon"]),
@@ -360,10 +358,6 @@ class GameMixin:
             self.relationship_metric_bar("边界", rel.get("boundary_clarity"), C["lavender"]),
             self.relationship_metric_bar("误读风险", rel.get("relationship_risk"), C["rouge"], danger_high=True),
         ]
-        if cp_allowed:
-            metrics.append(self.relationship_metric_bar("营业 CP", rel.get("business_cp_level"), C["lotus"], danger_high=True))
-        else:
-            metrics.append(self.relationship_metric_bar("职业边界", rel.get("professional_boundary_pressure"), C["dai"], danger_high=True))
         last_signals = [str(x) for x in list(rel.get("last_signals") or [])[-3:]]
         return ft.Container(
             padding=ft.Padding(left=10, right=10, top=10, bottom=10),
@@ -375,7 +369,7 @@ class GameMixin:
                     ft.Container(icon_image("romance", 17, 0.88), width=25, height=25, border_radius=13, bgcolor=ft.Colors.with_opacity(0.22, C["lotus"]), alignment=ft.Alignment.CENTER),
                     ft.Column([
                         ft.Text(str(name), size=13, color=C["ink"], weight=ft.FontWeight.W_700, font_family=FONT_CN, max_lines=1),
-                        ft.Text(f"{role} / {label}", size=10, color=C["sub"], font_family=FONT_CN, max_lines=1),
+                        ft.Text(f"{role}", size=10, color=C["sub"], font_family=FONT_CN, max_lines=1),
                     ], spacing=0, expand=True),
                 ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 *metrics,
@@ -1249,7 +1243,6 @@ class GameMixin:
         career = s.career or {}
         company = s.company or {}
         team = s.team or {}
-        fans = s.fans or {}
         risks = s.risks or {}
         talents = getattr(s, "talents", {}) or {}
         abilities = list(getattr(s, "abilities", []) or [])
@@ -1404,18 +1397,6 @@ class GameMixin:
             self.metric_bar("宿舍安全感", team.get("宿舍安全感"), "safety", C["jade"]),
             self.metric_bar("营业疲劳", team.get("营业疲劳"), "camera", C["rouge"], danger_high=True),
         ]
-        fans_children = [
-            self.metric_bar("个人粉丝", self.vget(fans, "个人粉丝", "个人粉丝数"), "fans", C["jade"]),
-            self.metric_bar("团体粉丝", self.vget(fans, "团体粉丝", "团体粉丝数"), "fans", C["celadon"]),
-            self.metric_bar("团粉稳定度", fans.get("团粉稳定度"), "fans", C["jade"]),
-            self.metric_bar("唯粉攻击性", fans.get("唯粉攻击性"), "crisis_pr", C["rouge"], danger_high=True),
-            self.metric_bar("CP粉规模", fans.get("CP粉规模"), "romance", C["lotus"], danger_high=True),
-            self.metric_bar("路人好感", fans.get("路人好感"), "market", C["celadon"]),
-            self.metric_bar("黑粉活跃度", fans.get("黑粉活跃度"), "crisis_pr", C["rouge"], danger_high=True),
-            self.metric_bar("站姐稳定度", fans.get("站姐稳定度"), "camera", C["jade"]),
-            self.metric_bar("粉丝信任基础", fans.get("粉丝信任基础"), "fans", C["jade"]),
-            self.metric_bar("粉圈撕裂度", fans.get("粉圈撕裂度"), "crisis_pr", C["rouge"], danger_high=True),
-        ]
         risk_children = [
             self.metric_bar("恋爱风险", risks.get("恋爱风险"), "romance", C["rouge"], danger_high=True),
             self.metric_bar("私生风险", risks.get("私生风险"), "safety", C["rouge"], danger_high=True),
@@ -1430,21 +1411,6 @@ class GameMixin:
             self.relationship_card(name, rel)
             for name, rel in list(s.relationships.items())[:16]
         ] or [ft.Text("暂无已解锁人物。新人物出现在剧情或 NPC 反应里后，才会建立个人关系档案。", size=12, color=C["sub"], font_family=FONT_CN)]
-
-        debut = getattr(s, "debut", {}) or {}
-        ending = getattr(s, "ending", {}) or {}
-        top_ending = (ending.get("candidate_endings") or [{}])[0] if isinstance(ending.get("candidate_endings"), list) and ending.get("candidate_endings") else {}
-        debut_ending_children = [
-            self.text_line("组合名", self.display_group_name(s), "stage", C["apricot"]),
-            self.text_line("出道可能性", f"{debut.get('readiness', 0)} / 概率 {debut.get('probability', 0)}%", "stage", C["lavender"]),
-            self.text_line("出道动向", self.player_debut_status(debut), "stage", C["apricot"]),
-            self.text_line("窗口倒计时", f"{debut.get('window_turns_left', 0)} 回合", "schedule", C["jade"]),
-            self.text_line("候选尝试", debut.get("candidate_attempts", 0), "contract", C["lotus"]),
-            self.text_line("最近结果", debut.get("last_result") or "暂无", "diary", C["dai"]),
-            ft.Divider(color=ft.Colors.with_opacity(0.35, C["line"])),
-            self.text_line("结局窗口", ending.get("window") or ending.get("status") or "closed", "contract", C["jade"]),
-            self.text_line("未来方向", self.player_ending_status(ending, top_ending), "contract", C["jade"]),
-        ]
 
         crisis_children = []
         if route:
@@ -1470,11 +1436,9 @@ class GameMixin:
         self.right_panel.controls.extend([
             self.foldout_section("company", "contract", "公司与合约", f"{company.get('公司规模', '中型公司')} / 满意 {company.get('公司满意度')} / 资源池 {company.get('资源池', 50)}", company_children, True),
             self.foldout_section("team", "friendship", "团队关系", f"默契 {team.get('团队默契')} / 信任 {team.get('队内信任度')} / 疲劳 {team.get('营业疲劳')}", team_children, True),
-            self.foldout_section("fans", "fans", "粉丝与舆论", f"黑粉 {fans.get('黑粉活跃度')} / 路人 {fans.get('路人好感')} / 撕裂 {fans.get('粉圈撕裂度')}", fans_children, False),
             self.foldout_section("risks", "safety", "风险系统", f"恋爱 {risks.get('恋爱风险')} / 私生 {risks.get('私生风险')} / 公关 {risks.get('公关危机风险')}", risk_children, True),
-            self.foldout_section("relationships", "romance", "关系状态", f"记录 {len(s.relationships)} 人 / 工作人员不进入 CP", relationship_children, False),
+            self.foldout_section("relationships", "romance", "关系状态", f"记录 {len(s.relationships)} 人", relationship_children, False),
             self.foldout_section("crisis_flags", "crisis_pr", "危机与长期记录", f"活跃危机 {len(active_crises)} / Flag {len(getattr(s, 'flags', []) or [])}", crisis_children, True),
-            self.foldout_section("debut_ending", "stage", "出道 / 结局进度", f"{self.display_group_name(s)} / 准备 {debut.get('readiness', 0)} / {self.player_ending_status(ending, top_ending)}", debut_ending_children, True),
         ])
 
     def choice_card(self, choice: Choice):
@@ -1495,190 +1459,18 @@ class GameMixin:
         self.choice_buttons.append(card)
         return card
 
-    def toggle_weekly_plan_option(self, key: str) -> None:
-        if self.is_generating or self.state is None:
-            return
-        selected = list(getattr(self, "weekly_plan_selected", []) or [])
-        if key in selected:
-            selected.remove(key)
-        else:
-            context = weekly_plan_context(self.state)
-            if len(selected) >= int(context.get("free_slots", 3)):
-                self.snack(f"本阶段最多选择 {context.get('free_slots', 3)} 个自选安排。")
-                return
-            selected.append(key)
-        self.weekly_plan_selected = normalize_weekly_plan_keys(self.state, selected)
-        self.refresh_choices()
-        self.page.update()
-
-    def weekly_plan_option_card(self, option, active: bool, compact: bool = False):
-        width = 132 if compact else 154
-        card = ft.Container(
-            width=width,
-            height=42,
-            padding=ft.Padding(left=10, right=10, top=7, bottom=7),
-            border_radius=18,
-            bgcolor=ft.Colors.with_opacity(0.86 if active else 0.50, "#F7ECEE" if active else ft.Colors.WHITE),
-            border=ft.Border.all(1, ft.Colors.with_opacity(0.68 if active else 0.42, C["lotus"] if active else C["line"])),
-            ink=True,
-            on_click=lambda e, k=option.key: self.toggle_weekly_plan_option(k),
-            content=ft.Row([
-                ft.Container(
-                    icon_image(option.icon_name, 17, 0.92 if active else 0.72),
-                    width=24,
-                    height=24,
-                    border_radius=12,
-                    bgcolor=ft.Colors.with_opacity(0.32 if active else 0.18, C["lotus"]),
-                    alignment=ft.Alignment.CENTER,
-                ),
-                ft.Column([
-                    ft.Text(option.label, size=11, color=C["ink"], weight=ft.FontWeight.W_700 if active else ft.FontWeight.W_600, font_family=FONT_CN, max_lines=1),
-                    ft.Text(option.category, size=9, color=ft.Colors.with_opacity(0.68, C["dai"]), font_family=FONT_CN, max_lines=1),
-                ], spacing=0, expand=True),
-            ], spacing=7, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        )
-        self.weekly_plan_controls.append(card)
-        return card
-
-    def weekly_plan_panel(self):
-        assert self.state is not None
-        context = weekly_plan_context(self.state)
-        selected_keys = normalize_weekly_plan_keys(self.state, getattr(self, "weekly_plan_selected", []) or [])
-        selected = set(selected_keys)
-        self.weekly_plan_selected = selected_keys
-        fixed = list(context.get("fixed_slot_plan", []) or [])
-        options = weekly_plan_options(self.state)
-        compact = int(self.page.width or 1320) < 1180
-        fixed_cards = [
-            ft.Container(
-                height=34,
-                padding=ft.Padding(left=10, right=12, top=0, bottom=0),
-                border_radius=17,
-                bgcolor=ft.Colors.with_opacity(0.46, ft.Colors.WHITE),
-                border=ft.Border.all(1, ft.Colors.with_opacity(0.40, ft.Colors.WHITE)),
-                content=ft.Row([
-                    icon_image("schedule", 14, 0.68),
-                    ft.Text(str(item), size=10, color=C["sub"], font_family=FONT_CN, max_lines=1),
-                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            )
-            for item in fixed
-        ]
-        option_cards = [self.weekly_plan_option_card(option, option.key in selected, compact) for option in options]
-        selected_text = weekly_plan_summary(self.state, self.weekly_plan_selected)
-        return ft.Container(
-            padding=ft.Padding(left=12, right=12, top=10, bottom=10),
-            border_radius=22,
-            bgcolor=ft.Colors.with_opacity(0.46, "#FBFCFF"),
-            border=ft.Border.all(1, ft.Colors.with_opacity(0.52, C["line"])),
-            content=ft.Column([
-                ft.Row([
-                    self.section_title("schedule", "本周安排", f"固定 {context['mandatory_slots']} 格 · 自选 {len(selected)}/{context['free_slots']} 格"),
-                    ft.Container(expand=True),
-                    ft.Text("会自动写入本回合行动", size=10, color=ft.Colors.with_opacity(0.64, C["sub"]), font_family=FONT_CN),
-                ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                ft.Row(fixed_cards, wrap=True, spacing=7, run_spacing=7),
-                ft.Row(option_cards, wrap=True, spacing=8, run_spacing=8),
-                ft.Text(selected_text, size=10, color=C["sub"], font_family=FONT_CN, max_lines=2),
-            ], spacing=8),
-        )
-
-    def action_with_weekly_plan(self, action: str) -> str:
-        if self.state is None:
-            return action
-        return compose_action_with_weekly_plan(action, self.state, getattr(self, "weekly_plan_selected", []) or [])
-
-    def refresh_choices(self) -> None:
-        assert self.state is not None
-        self.choice_row.controls.clear()
-        self.choice_buttons = []
-        self.weekly_plan_controls = []
-        cards = []
-        for choice in self.state.current_choices:
-            if choice.id.upper() == "E":
-                continue
-            cards.append(self.choice_card(choice))
-        self.submit_button = ft.ElevatedButton(
-            "提交行动",
-            icon=icon("SEND"),
-            on_click=self.submit_custom_action,
-            style=ft.ButtonStyle(bgcolor=C["lavender"], color=ft.Colors.WHITE, shape=ft.RoundedRectangleBorder(radius=18), padding=ft.Padding(left=18, right=18, top=14, bottom=14)),
-        )
-        self.choice_row.controls.append(
-            ft.Row([
-                ft.Column([
-                    self.weekly_plan_panel(),
-                ], expand=4),
-                ft.Column([
-                    self.section_title("stage", "下一步选择", "选择剧情卡片，或写下自定义行动"),
-                    ft.Row(cards, wrap=True, spacing=8, run_spacing=8),
-                    ft.Row([self.custom_input, self.submit_button], spacing=10, vertical_alignment=ft.CrossAxisAlignment.END),
-                ], expand=6),
-            ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
-        )
-
     def submit_custom_action(self, e) -> None:
         if self.is_generating:
             self.snack("本回合正在生成中，请等待完成。")
             return
         text = (self.custom_input.value or "").strip()
         if not text:
-            if getattr(self, "weekly_plan_selected", None):
-                text = "我按照本周安排推进训练、生活和恢复。"
-            else:
-                self.snack("请输入自定义行动，或先选择本周安排。")
-                return
+            self.snack("回合引擎正在重构中。")
+            return
         self.submit_action(f"E. {text}")
 
     def submit_action(self, action: str) -> None:
-        if self.is_generating:
-            self.snack("本回合正在生成中，请等待完成。")
-            return
-        if self.state is None or self.save_id is None:
-            self.snack("没有可用存档。")
-            return
-
-        context = weekly_plan_context(self.state)
-        free_slots = int(context.get("free_slots", 0))
-        selected = getattr(self, "weekly_plan_selected", []) or []
-        if free_slots > 0 and not selected:
-            self.snack("请先选择本周安排，再提交行动。")
-            return
-
-        action = self.action_with_weekly_plan(action)
-        self.set_generating(True)
-        current_state = self.state
-        current_save_id = self.save_id
-
-        def worker() -> None:
-            try:
-                engine = TurnEngine(self.storage, self.config)
-                state, response, applied, route_info, system_events, validation = engine.run_turn(current_save_id, current_state, action)
-                self.state = state
-                summary = self.build_turn_summary(applied=applied, system_events=system_events, validation=validation, route_info=route_info, action=action)
-                narrative_text = self.display_narrative_from_response(response)
-                logger.info(f"UI narrative visible chars={len(str(narrative_text or ''))}, preview={str(narrative_text or '').replace(chr(10), ' ')[:220]}")
-                if not self.normalize_visible_text(narrative_text):
-                    narrative_text = "这一回合已经记录下来。练习室的灯还亮着，你可以先查看本回合总结，再决定下一步。"
-                self.set_story_pair(narrative_text, summary)
-                self.refresh_panels()
-                self.weekly_plan_selected = []
-                self.refresh_choices()
-                self.custom_input.value = ""
-            except ActionBlockedError as exc:
-                suggestions = ft.Column([ft.Text(exc.message, size=14, color=C["rouge"], font_family=FONT_CN, selectable=True)], spacing=8)
-                if exc.suggestions:
-                    suggestions.controls.append(ft.Text("可以改成：" + "；".join(exc.suggestions[:4]), size=13, color=C["sub"], font_family=FONT_CN))
-                self.story_view.controls.append(self.story_block("行动未执行", "不消耗回合，也不会写入存档", "safety", suggestions, C["rouge"]))
-            except LLMError as exc:
-                self.story_view.controls.append(self.story_block("生成失败", "本回合未写入存档，请检查 API 设置后重试", "api", ft.Text(str(exc), size=13, color=C["rouge"], font_family=FONT_CN, selectable=True), C["rouge"]))
-            except Exception as exc:
-                logger.exception("submit_action failed")
-                self.story_view.controls.append(self.story_block("程序错误", "本回合未完成", "crisis_pr", ft.Text(str(exc), size=13, color=C["rouge"], font_family=FONT_CN, selectable=True), C["rouge"]))
-            finally:
-                self.set_generating(False)
-                self.page.update()
-
-        self.run_in_background(worker)
+        self.snack("回合引擎正在重构中，暂时无法提交行动。")
 
     def snack(self, message: str) -> None:
         self.page.snack_bar = ft.SnackBar(ft.Text(message))

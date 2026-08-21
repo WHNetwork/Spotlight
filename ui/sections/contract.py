@@ -199,7 +199,6 @@ class ContractMixin:
         risks = s.risks if isinstance(s.risks, dict) else {}
         safety = s.safety if isinstance(s.safety, dict) else {}
         debut = s.debut if isinstance(s.debut, dict) else {}
-        ending = s.ending if isinstance(s.ending, dict) else {}
         group_name = self.display_group_name(s)
         layout = self.contract_layout_sizes()
 
@@ -313,7 +312,7 @@ class ContractMixin:
                     ),
                 ], spacing=18, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.START),
                 self.static_page_card("核心条款", "第一版以可读条款展示，后续可扩展为逐条签署记录", "staff_boundary", self.static_text_block(clause_text, 8, 16)),
-                self.static_page_card("合同历史", "出道、延期、结局窗口和长期记录", "diary", self.static_text_block("\n".join(history_items + [f"当前未来方向：{self.player_ending_status(ending)}"]), 5, 10)),
+                self.static_page_card("合同历史", "出道准备与长期记录", "diary", self.static_text_block("\n".join(history_items), 5, 10)),
             ], spacing=18, scroll=ft.ScrollMode.AUTO, expand=True)
             main_panel = ft.Container(expand=True, content=contract_body)
         else:

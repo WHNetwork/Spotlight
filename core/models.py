@@ -255,35 +255,8 @@ class GameState(BaseModel):
         "营业疲劳": 15,
     })
 
-    fans: Dict[str, int] = Field(default_factory=lambda: {
-        "个人粉丝数": 0,
-        "团体粉丝数": 0,
-        "团粉稳定度": 50,
-        "唯粉规模": 0,
-        "唯粉攻击性": 10,
-        "CP粉规模": 0,
-        "CP粉幻想强度": 0,
-        "路人好感": 40,
-        "黑粉活跃度": 10,
-        "站姐稳定度": 50,
-        "粉丝信任基础": 50,
-        "粉圈撕裂度": 5,
-    })
-
-    market: Dict[str, int] = Field(default_factory=lambda: {
-        "话题度": 15,
-        "品牌价值": 10,
-        "韩国本土影响力": 5,
-        "中国市场影响力": 0,
-        "日本市场影响力": 0,
-        "东南亚市场影响力": 0,
-        "欧美市场影响力": 0,
-        "音源潜力": 30,
-        "销量潜力": 25,
-        "短视频传播力": 25,
-        "直拍传播力": 20,
-        "海外流媒潜力": 0,
-    })
+    fans: Dict[str, int] = Field(default_factory=dict)
+    market: Dict[str, int] = Field(default_factory=dict)
 
     risks: Dict[str, int] = Field(default_factory=lambda: {
         "恋爱风险": 0,
@@ -296,13 +269,7 @@ class GameState(BaseModel):
         "公关危机风险": 5,
     })
 
-    comeback: Dict[str, Any] = Field(default_factory=lambda: {
-        "当前回归风格": "未定",
-        "制作参与等级": 0,
-        "风格适配度": 50,
-        "概念争议度": 10,
-        "回归阶段": "无回归计划",
-    })
+    comeback: Dict[str, Any] = Field(default_factory=dict)
 
     period: Dict[str, Any] = Field(default_factory=lambda: {
         "enabled": True,
@@ -411,15 +378,6 @@ class GameState(BaseModel):
         "last_result": "",
         "history": [],
     })
-
-    ending: Dict[str, Any] = Field(default_factory=lambda: {
-        "status": "ongoing",
-        "window": "closed",
-        "candidate_endings": [],
-        "last_evaluation_turn": -1,
-        "final_result": "",
-        "history": [],
-    })
     inner_secrets: List[Dict[str, Any]] = Field(default_factory=list)
     crush_threads: List[Dict[str, Any]] = Field(default_factory=list)
     emotional_outlets: List[str] = Field(default_factory=list)
@@ -448,64 +406,7 @@ class GameState(BaseModel):
         "recent_life_notes": [],
     })
 
-    market_scores: Dict[str, Any] = Field(default_factory=lambda: {
-        "音源成绩": 0,
-        "专辑销量指数": 0,
-        "首日销量": 0,
-        "首周销量": 0,
-        "MV播放指数": 0,
-        "短视频传播力": 25,
-        "直拍传播力": 20,
-        "投票动员力": 0,
-        "音乐节目分数": 0,
-        "一位概率": 0,
-        "年度奖项积分": 0,
-        "本土热度": 0,
-        "海外流媒": 0,
-        "品牌询盘量": 0,
-        "路人盘": 40,
-        "核心粉购买力": 0,
-        "last_market_result": "",
-        "history": [],
-    })
 
-    commercial: Dict[str, Any] = Field(default_factory=lambda: {
-        "商业安全度": 70,
-        "品牌适配度": 45,
-        "代言数量": 0,
-        "杂志资源": 0,
-        "奢侈品关系": 0,
-        "个人收入": 0,
-        "公司分成比例": 70,
-        "粉丝购买力": 0,
-        "争议商业风险": 10,
-        "last_commercial_note": "",
-    })
-
-    contract_terms: Dict[str, Any] = Field(default_factory=lambda: {
-        "合约剩余月数": 84,
-        "玩家续约意愿": 50,
-        "队友续约意向": 50,
-        "分成比例": 70,
-        "solo权限": 10,
-        "演员约权限": 10,
-        "创作署名权": 5,
-        "休假保障": 25,
-        "健康保障": 35,
-        "工作室可能性": 0,
-        "团体存续概率": 65,
-        "last_contract_note": "",
-    })
-
-    career_branches: Dict[str, Any] = Field(default_factory=lambda: {
-        "acting_path_stage": "未开启",
-        "solo_path_stage": "未开启",
-        "unit_path_stage": "未开启",
-        "creative_path_stage": "未开启",
-        "rights_path_stage": "未开启",
-        "branch_opportunities": [],
-        "branch_history": [],
-    })
 
     current_choices: List[Choice] = Field(default_factory=list)
     flags: List[str] = Field(default_factory=list)
@@ -552,9 +453,7 @@ class GameState(BaseModel):
             "company": self.company,
             "team": self.team,
             "fans": self.fans,
-            "market": self.market,
             "risks": self.risks,
-            "comeback": self.comeback,
             "period": self.period,
             "inner_life": self.inner_life,
             "schedule_profile": self.schedule_profile,
@@ -562,7 +461,6 @@ class GameState(BaseModel):
             "skill_proficiency": self.skill_proficiency,
             "skill_last_practiced": self.skill_last_practiced,
             "debut": self.debut,
-            "ending": self.ending,
             "inner_secrets": self.inner_secrets[-10:],
             "crush_threads": self.crush_threads[-5:],
             "emotional_outlets": self.emotional_outlets,
@@ -572,10 +470,6 @@ class GameState(BaseModel):
             "teammates": self.teammates,
             "important_npcs": self.important_npcs,
             "trainee_life": self.trainee_life,
-            "market_scores": self.market_scores,
-            "commercial": self.commercial,
-            "contract_terms": self.contract_terms,
-            "career_branches": self.career_branches,
             "flags": self.flags,
             "major_events": self.major_events,
             "unresolved_conflicts": self.unresolved_conflicts,

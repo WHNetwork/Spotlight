@@ -1,10 +1,72 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Dict, List, Tuple
 import re
 
 from core.models import GameState
-from core.talents import generate_talents
+
+
+TALENT_KEYS = [
+    "舞蹈天赋", "声乐天赋", "RAP天赋", "镜头天赋", "综艺天赋",
+    "语言天赋", "演技天赋", "创作天赋", "体能天赋", "抗压天赋", "社交天赋"
+]
+
+
+def _talent_stable_int(seed: str, low: int = 35, high: int = 75) -> int:
+    h = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    val = int(h[:8], 16)
+    return low + (val % (high - low + 1))
+
+
+def generate_talents(character: Dict[str, object]) -> Dict[str, int]:
+    base_seed = "|".join(str(character.get(k, "")) for k in ["艺名", "本名", "身份", "特长", "弱项"])
+    talents = {k: _talent_stable_int(base_seed + k) for k in TALENT_KEYS}
+
+    identity = str(character.get("身份", ""))
+    speciality = str(character.get("特长", ""))
+    weakness = str(character.get("弱项", ""))
+
+    def boost(key: str, amount: int) -> None:
+        talents[key] = max(0, min(100, talents[key] + amount))
+
+    if "舞" in speciality:
+        boost("舞蹈天赋", 12)
+    if "声乐" in speciality or "唱" in speciality:
+        boost("声乐天赋", 10)
+    if "rap" in speciality.lower() or "说唱" in speciality:
+        boost("RAP天赋", 10)
+    if "镜头" in speciality or "门面" in speciality:
+        boost("镜头天赋", 8)
+    if "综艺" in speciality or "采访" in speciality:
+        boost("综艺天赋", 8)
+    if "演技" in speciality or "表演" in speciality:
+        boost("演技天赋", 8)
+    if "作词" in speciality or "作曲" in speciality or "创作" in speciality:
+        boost("创作天赋", 10)
+
+    if "舞" in weakness:
+        boost("舞蹈天赋", -8)
+    if "声乐" in weakness or "唱" in weakness:
+        boost("声乐天赋", -8)
+    if "韩语" in weakness or "语言" in weakness:
+        boost("语言天赋", -6)
+
+    if "运动员" in identity:
+        boost("体能天赋", 15)
+        boost("舞蹈天赋", 5)
+    if "海外" in identity:
+        boost("语言天赋", 10)
+    if "童星" in identity or "模特" in identity:
+        boost("镜头天赋", 12)
+        boost("演技天赋", 6)
+    if "选秀" in identity:
+        boost("舞台感染力天赋" if "舞台感染力天赋" in talents else "镜头天赋", 8)
+    if "网红" in identity:
+        boost("镜头天赋", 8)
+        boost("综艺天赋", 6)
+
+    return talents
 
 
 CAREER_KEYS = ["舞蹈实力", "声乐实力", "RAP能力", "舞台感染力", "综艺感", "语言能力", "演技潜力", "创作能力", "制作人能力"]

@@ -53,7 +53,6 @@ class KpopApp(
             "social_env": False,
             "company": True,
             "team": True,
-            "fans": False,
             "risks": True,
             "relationships": False,
             "crisis_flags": True,
