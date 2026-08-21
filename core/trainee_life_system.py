@@ -190,4 +190,14 @@ def evaluate_trainee_life_system(state: GameState, action: str) -> Tuple[List[Sy
     for ev in events:
         for key, value in ev.suggested_diff.items():
             diff[key] = diff.get(key, 0) + value
+
+    if state.is_trainee_stage() and not events:
+        events.append(_event(
+            "trainee_daily_life",
+            "练习生日常推进",
+            "练习室的训练和宿舍的生活节奏在一天天推进。",
+            "info",
+            source_system="trainee_life",
+        ))
+
     return events, diff

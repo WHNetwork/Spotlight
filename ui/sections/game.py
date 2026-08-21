@@ -1088,38 +1088,6 @@ class GameMixin:
                 logger.exception("page.run_thread failed; fallback to threading.Thread")
         threading.Thread(target=fn, daemon=True).start()
 
-    def init_audio(self) -> None:
-        if self.bgm_audio is not None:
-            return
-        if not hasattr(ft, "Audio"):
-            return
-        try:
-            self.bgm_audio = ft.Audio(src=asset("audio/home_bgm.wav"), autoplay=False, volume=0.25)
-            self.page.overlay.append(self.bgm_audio)
-        except Exception:
-            self.bgm_audio = None
-
-    def toggle_bgm(self, e=None) -> None:
-        self.init_audio()
-        if self.bgm_audio is None:
-            self.snack("当前 Flet 环境不支持内置 BGM，或没有找到 audio/home_bgm.wav。")
-            return
-        try:
-            if self.bgm_enabled:
-                if hasattr(self.bgm_audio, "pause"):
-                    self.bgm_audio.pause()
-                self.bgm_enabled = False
-            else:
-                if hasattr(self.bgm_audio, "play"):
-                    self.bgm_audio.play()
-                self.bgm_enabled = True
-            if self.bgm_button_label is not None:
-                self.bgm_button_label.value = "音乐开" if self.bgm_enabled else "音乐关"
-            elif self.bgm_button is not None and hasattr(self.bgm_button, "text"):
-                self.bgm_button.text = "♪ 音乐开" if self.bgm_enabled else "♪ 音乐关"
-            self.page.update()
-        except Exception as exc:
-            self.snack(f"BGM 播放失败：{exc}")
 
     def set_generating(self, value: bool) -> None:
         self.is_generating = value
@@ -1182,7 +1150,6 @@ class GameMixin:
                 self.set_story_pair(first_text)
         self.refresh_panels()
         self.refresh_choices()
-        self.init_audio()
 
         route = self.state.route_history[-1] if self.state.route_history else None
 
@@ -1214,34 +1181,6 @@ class GameMixin:
                 ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER),
             )
 
-        self.bgm_button_label = ft.Text("音乐开" if self.bgm_enabled else "音乐关", size=12, color=C["dai"], weight=ft.FontWeight.W_600, font_family=FONT_CN)
-        self.bgm_button = ft.Container(
-            height=38,
-            padding=ft.Padding(left=12, right=13, top=6, bottom=6),
-            border_radius=19,
-            bgcolor=ft.Colors.with_opacity(0.78, ft.Colors.WHITE),
-            border=ft.Border.all(1, ft.Colors.with_opacity(0.62, C["line"])),
-            shadow=ft.BoxShadow(
-                blur_radius=16,
-                spread_radius=0,
-                color=ft.Colors.with_opacity(0.08, C["dai"]),
-                offset=ft.Offset(0, 5),
-            ),
-            ink=True,
-            on_click=self.toggle_bgm,
-            content=ft.Row([
-                ft.Container(
-                    icon_image("music", 18, 0.88),
-                    width=23,
-                    height=23,
-                    border_radius=12,
-                    bgcolor=ft.Colors.with_opacity(0.24, C["lotus"]),
-                    alignment=ft.Alignment.CENTER,
-                ),
-                self.bgm_button_label,
-            ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER, alignment=ft.MainAxisAlignment.CENTER),
-        )
-
         top_bar = ft.Container(
             padding=ft.Padding(left=18, right=18, top=10, bottom=10),
             content=ft.Row([
@@ -1257,7 +1196,6 @@ class GameMixin:
                 self.character_identity_card(),
                 ft.Container(expand=True),
                 ft.Row([
-                    self.bgm_button,
                     top_nav_button("设置", "settings", lambda e: self.show_settings()),
                     top_nav_button("存档", "save_archive", lambda e: self.show_save_list()),
                     top_nav_button("首页", "app_logo", lambda e: self.show_home(), active=True),
@@ -1665,12 +1603,18 @@ class GameMixin:
             on_click=self.submit_custom_action,
             style=ft.ButtonStyle(bgcolor=C["lavender"], color=ft.Colors.WHITE, shape=ft.RoundedRectangleBorder(radius=18), padding=ft.Padding(left=18, right=18, top=14, bottom=14)),
         )
-        self.choice_row.controls.extend([
-            self.weekly_plan_panel(),
-            ft.Row([self.section_title("stage", "下一步选择", "选择剧情卡片，或写下自定义行动")], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            ft.Row(cards, wrap=True, spacing=8, run_spacing=8),
-            ft.Row([self.custom_input, self.submit_button], spacing=10, vertical_alignment=ft.CrossAxisAlignment.END),
-        ])
+        self.choice_row.controls.append(
+            ft.Row([
+                ft.Column([
+                    self.weekly_plan_panel(),
+                ], expand=4),
+                ft.Column([
+                    self.section_title("stage", "下一步选择", "选择剧情卡片，或写下自定义行动"),
+                    ft.Row(cards, wrap=True, spacing=8, run_spacing=8),
+                    ft.Row([self.custom_input, self.submit_button], spacing=10, vertical_alignment=ft.CrossAxisAlignment.END),
+                ], expand=6),
+            ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)
+        )
 
     def submit_custom_action(self, e) -> None:
         if self.is_generating:
@@ -1691,6 +1635,13 @@ class GameMixin:
             return
         if self.state is None or self.save_id is None:
             self.snack("没有可用存档。")
+            return
+
+        context = weekly_plan_context(self.state)
+        free_slots = int(context.get("free_slots", 0))
+        selected = getattr(self, "weekly_plan_selected", []) or []
+        if free_slots > 0 and not selected:
+            self.snack("请先选择本周安排，再提交行动。")
             return
 
         action = self.action_with_weekly_plan(action)

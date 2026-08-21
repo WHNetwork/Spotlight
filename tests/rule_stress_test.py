@@ -72,9 +72,9 @@ class RecordingProvider:
         self.last_messages: List[Dict[str, str]] = []
         self.last_raw: str = ""
 
-    def generate(self, messages: List[Dict[str, str]], model: str | None = None) -> str:
+    def generate(self, messages: List[Dict[str, str]], model: str | None = None, **kwargs: Any) -> str:
         self.last_messages = messages
-        self.last_raw = self.delegate.generate(messages, model=model)
+        self.last_raw = self.delegate.generate(messages, model=model, **kwargs)
         return self.last_raw
 
 
@@ -814,6 +814,286 @@ def setup_cp_fandom_pressure(state: GameState) -> None:
     state.team["营业疲劳"] = 66
 
 
+def setup_fansign_fanmeeting(state: GameState) -> None:
+    setup_idol_market(state)
+    state.current_schedule = "签售会"
+    state.body["体力"] = 48
+    state.body["体重管理压力"] = 72
+    state.body["嗓音状态"] = 55
+    state.fans["个人粉丝数"] = 150000
+    state.fans["站姐稳定度"] = 62
+    state.risks["私生风险"] = 54
+
+
+def setup_music_show_encore(state: GameState) -> None:
+    setup_idol_market(state)
+    state.market_scores.update({"音乐节目分数": 78, "一位概率": 68, "音源成绩": 82, "专辑销量指数": 76})
+    state.fans.update({"团粉稳定度": 80, "粉丝信任基础": 78, "个人粉丝数": 200000})
+    state.career["舞台感染力"] = 82
+    state.body["体力"] = 60
+
+
+def setup_album_recording_pipeline(state: GameState) -> None:
+    setup_idol_market(state)
+    state.comeback["回归阶段"] = "录音期"
+    state.career["声乐实力"] = 68
+    state.career["创作能力"] = 48
+    state.body["嗓音状态"] = 62
+    state.comeback["制作参与等级"] = 2
+    state.company["公司满意度"] = 64
+
+
+def setup_content_creation_platform(state: GameState) -> None:
+    setup_idol_market(state)
+    state.current_schedule = "内容拍摄日"
+    state.career["综艺感"] = 56
+    state.body["体力"] = 44
+    state.fans["路人好感"] = 62
+    state.market["短视频传播力"] = 78
+
+
+def setup_company_acquisition_rumor(state: GameState) -> None:
+    setup_idol_market(state)
+    state.company.update({
+        "公司规模": "中型公司",
+        "公司财务状况": 30,
+        "母公司项目优先级": 44,
+        "新团准备度": 68,
+    })
+    state.mind["精神压力"] = 64
+    state.company["合约稳定度"] = 38
+
+
+def setup_multi_member_team(state: GameState) -> None:
+    setup_idol_market(state)
+    state.teammates = [
+        {"name": "李娜英", "role": "主唱", "age": 20},
+        {"name": "姜瑞允", "role": "主舞", "age": 21},
+        {"name": "金艺恩", "role": "RAP担当", "age": 19},
+        {"name": "朴秀雅", "role": "门面", "age": 19},
+        {"name": "崔多贤", "role": "忙内", "age": 18},
+    ]
+    state.team["队内资源平衡"] = 34
+    state.team["队内竞争度"] = 62
+    state.team["真实关系温度"] = 48
+    state.fans["粉圈撕裂度"] = 56
+
+
+def setup_senior_junior_mentorship(state: GameState) -> None:
+    setup_idol_market(state)
+    state.age_context["generation_role"] = "后辈"
+    state.important_npcs = [{"name": "朴信惠", "role": "大前辈女团成员", "age": 32}]
+    state.hierarchy["honorific_adaptation"] = 62
+    state.hierarchy["mentorship_received"] = 14
+    state.current_mainline = "团体活动期"
+
+
+def setup_charity_ambassador(state: GameState) -> None:
+    setup_idol_market(state)
+    state.commercial["商业安全度"] = 68
+    state.fans["路人好感"] = 74
+    state.market["品牌价值"] = 66
+    state.company["公司满意度"] = 72
+    state.risks["争议商业风险"] = 8
+
+
+def setup_external_judge_evaluation(state: GameState) -> None:
+    state.current_stage = "练习生阶段"
+    state.current_mainline = "初入公司"
+    state.current_schedule = "外部评委评估"
+    state.career.update({"舞蹈实力": 24, "声乐实力": 28, "舞台感染力": 22, "形象指数": 34})
+    state.body["体力"] = 68
+    state.body["伤病风险"] = 22
+    state.mind["自我认同"] = 44
+    state.company["公司满意度"] = 58
+
+
+def setup_stylist_wardrobe_conflict(state: GameState) -> None:
+    setup_idol_market(state)
+    state.important_npcs = [{"name": "金造型师", "role": "造型师", "age": 28}]
+    state.current_schedule = "回归舞台彩排"
+    state.body["身体自我意识"] = 58
+    state.body["体重管理压力"] = 72
+    state.mind["自我认同"] = 42
+    state.team["镜头前和谐度"] = 62
+
+
+def setup_dorm_daily_life(state: GameState) -> None:
+    state.current_stage = "练习生阶段"
+    state.current_mainline = "初入公司"
+    state.current_schedule = "宿舍日常"
+    state.team.update({"宿舍安全感": 48, "真实关系温度": 52})
+    state.mind["孤独感"] = 56
+    state.company["公司满意度"] = 62
+    state.trainee_life["bullying_pressure"] = 32
+
+
+def setup_comeback_second_week(state: GameState) -> None:
+    setup_idol_market(state)
+    state.comeback["回归阶段"] = "打歌第二周"
+    state.market_scores["音乐节目分数"] = 68
+    state.body["体力"] = 44
+    state.body["嗓音状态"] = 52
+    state.body["肌肉疲劳"] = 66
+    state.mind["精神压力"] = 58
+    state.team["营业疲劳"] = 62
+    state.fans["核心粉购买力"] = 72
+
+
+def setup_tour_jetlag_recovery(state: GameState) -> None:
+    setup_idol_market(state)
+    state.current_schedule = "世界巡演日本站"
+    state.body.update({"体力": 36, "睡眠质量": 24, "免疫状态": 38, "肌肉疲劳": 74, "嗓音状态": 48})
+    state.mind["精神压力"] = 72
+    state.social_context["is_overseas"] = True
+    state.social_context["language_barrier"] = 48
+    state.market["日本市场影响力"] = 68
+
+
+def setup_dating_exposure_denial(state: GameState) -> None:
+    setup_idol_market(state)
+    state.risks.update({"恋爱风险": 82, "公关危机风险": 76, "私生风险": 64})
+    state.fans["黑粉活跃度"] = 74
+    state.fans["粉丝信任基础"] = 44
+    state.company["危机关注度"] = 78
+    register_known_npc(state, "金泰渊", "同代爱豆", 21)
+    state.relationships["金泰渊"] = {
+        "name": "金泰渊", "role": "同代爱豆", "age": 21,
+        "friendship": 48, "player_crush": 44, "ambiguity": 36,
+        "relationship_risk": 72, "cp_eligible": True,
+    }
+
+
+def setup_scandal_recovery_arc(state: GameState) -> None:
+    setup_idol_market(state)
+    from core.models import ActiveCrisis
+    state.active_crises.append(ActiveCrisis(
+        crisis_id="recover_pr", crisis_type="public_relations",
+        title="过往争议恢复期", stage="aftermath", heat=28, duration=2,
+        failure_flag="舆论伤痕影响信任",
+    ))
+    state.fans["粉丝信任基础"] = 38
+    state.fans["路人好感"] = 32
+    state.market["品牌价值"] = 26
+    state.company["公司满意度"] = 44
+    state.mind["自我认同"] = 36
+    state.flags.add("舆论处理留下长期阴影")
+
+
+def setup_award_ceremony_red_carpet(state: GameState) -> None:
+    setup_idol_market(state)
+    state.current_schedule = "年末颁奖典礼"
+    state.market_scores["年度奖项积分"] = 82
+    state.market["话题度"] = 84
+    state.fans["团粉稳定度"] = 80
+    state.career["形象指数"] = 80
+    state.company["主推指数"] = 76
+    state.team["镜头前和谐度"] = 72
+    state.body["体力"] = 54
+
+
+def setup_birthday_anniversary(state: GameState) -> None:
+    setup_idol_market(state)
+    state.current_schedule = "生日纪念日"
+    state.fans["粉丝信任基础"] = 76
+    state.fans["个人粉丝数"] = 180000
+    state.market["话题度"] = 68
+    state.mind["心情"] = 62
+    state.mind["被看见的渴望"] = 52
+
+
+def setup_hiatus_return(state: GameState) -> None:
+    setup_idol_market(state)
+    state.flags.add("健康暂停")
+    state.current_mainline = "健康恢复期回归"
+    state.current_schedule = "暂停后初次回归"
+    state.body["体力"] = 52
+    state.body["伤病风险"] = 42
+    state.mind["自我认同"] = 44
+    state.mind["职业倦怠"] = 48
+    state.fans["粉丝信任基础"] = 56
+    state.market["话题度"] = 44
+    state.company["危机关注度"] = 38
+
+
+def setup_group_rebrand_concept(state: GameState) -> None:
+    setup_idol_market(state)
+    state.current_mainline = "团体风格转型期"
+    state.current_schedule = "概念重组会议"
+    state.comeback["制作参与等级"] = 3
+    state.career.update({"形象指数": 76, "创作能力": 62})
+    state.market["话题度"] = 62
+    state.fans["团粉稳定度"] = 48
+    state.company["公司满意度"] = 56
+    state.team["团体存续概率"] = 68
+
+
+def setup_platform_live_mishap(state: GameState) -> None:
+    setup_idol_market(state)
+    state.current_schedule = "直播日"
+    state.career["综艺感"] = 42
+    state.mind["精神压力"] = 64
+    state.body["体力"] = 48
+    state.fans["黑粉活跃度"] = 68
+    state.risks["公关危机风险"] = 44
+    state.comeback["comeback_risk"] = "直播失言"
+
+
+def setup_positive_turnaround(state: GameState) -> None:
+    setup_idol_market(state)
+    state.market["话题度"] = 22
+    state.market["品牌价值"] = 18
+    state.fans["个人粉丝数"] = 8000
+    state.fans["路人好感"] = 28
+    state.company["公司满意度"] = 36
+    state.mind["自我认同"] = 34
+    state.flags.add("一度被公司冷处理")
+
+
+def setup_data_analytics_meeting(state: GameState) -> None:
+    setup_idol_market(state)
+    state.current_schedule = "公司数据分析会议"
+    state.company["公司风格"] = "数据导向"
+    state.market["话题度"] = 58
+    state.market["短视频传播力"] = 62
+    state.fans["核心粉购买力"] = 58
+    state.fans["路人好感"] = 54
+    state.market_scores["直拍传播力"] = 64
+
+
+def setup_contract_renewal_deadline(state: GameState) -> None:
+    setup_idol_market(state)
+    state.company.update({
+        "合约稳定度": 28, "续约倾向": 48, "个人议价权": 66,
+        "合约剩余时间": 3, "团体存续概率": 56,
+    })
+    state.teammates = [{"name": "李娜英", "role": "同团成员", "age": 23}]
+    state.mind["职业倦怠"] = 62
+    state.fans["团粉稳定度"] = 54
+
+
+def setup_training_mentor_teacher(state: GameState) -> None:
+    state.current_stage = "练习生阶段"
+    state.current_mainline = "初入公司"
+    state.current_schedule = "一对一指导课"
+    state.important_npcs = [{"name": "宋老师", "role": "声乐老师", "age": 36}]
+    state.career["声乐实力"] = 16
+    state.talents["声乐天赋"] = 76
+    state.body["体力"] = 72
+    state.company["公司满意度"] = 54
+
+
+def setup_rival_collab_stage(state: GameState) -> None:
+    setup_idol_market(state)
+    state.current_schedule = "合作舞台彩排"
+    state.important_npcs = [{"name": "韩素敏", "role": "对家团成员", "age": 21}]
+    state.fans["粉圈撕裂度"] = 68
+    state.fans["唯粉攻击性"] = 74
+    state.team["队内竞争度"] = 56
+    state.market["话题度"] = 78
+    state.risks["队内不和曝光风险"] = 42
+
+
 def setup_debut_entry_window(state: GameState) -> None:
     setup_debut_candidate_high(state)
     state.debut["status"] = "not_candidate"
@@ -874,6 +1154,161 @@ def setup_ending_resolved_candidate(state: GameState) -> None:
     state.market["品牌价值"] = 88
     state.fans["个人粉丝数"] = 300000
     state.career["舞台感染力"] = 88
+
+
+def setup_high_talent_low_skill(state: GameState) -> None:
+    """舞蹈天赋极高但舞蹈实力极低的新人。"""
+    state.career["舞蹈实力"] = 8
+    state.career["声乐实力"] = 10
+    state.talents["舞蹈天赋"] = 92
+    state.talents["声乐天赋"] = 56
+    state.talents["创作天赋"] = 50
+    state.body["体力"] = 80
+
+
+def setup_mental_breakdown_risk(state: GameState) -> None:
+    """精神压力极高、职业倦怠近满的边缘状态。"""
+    state.mind.update({"精神压力": 92, "职业倦怠": 88, "心情": 14, "自我认同": 16, "孤独感": 82})
+    state.body.update({"体力": 38, "睡眠质量": 28, "伤病风险": 68})
+    state.company["危机关注度"] = 62
+
+
+def setup_creative_high_potential(state: GameState) -> None:
+    """创作能力达标、制作参与有一定权限。"""
+    setup_idol_market(state)
+    state.career.update({"创作能力": 52, "制作人能力": 8, "声乐实力": 72})
+    state.comeback["制作参与等级"] = 2
+    state.comeback["回归阶段"] = "概念会议"
+    state.company["公司信任度"] = 62
+
+
+def setup_acting_readiness(state: GameState) -> None:
+    """演员路线几乎ready。"""
+    setup_idol_market(state)
+    state.career.update({"演技潜力": 72, "形象指数": 78, "语言能力": 66, "综艺感": 58})
+    state.market["品牌价值"] = 74
+    state.company["主推指数"] = 68
+    state.fans["个人粉丝数"] = 250000
+
+
+def setup_full_bloom_market(state: GameState) -> None:
+    """全市场指标都顶级。"""
+    setup_idol_market(state)
+    state.market.update({
+        "话题度": 92, "品牌价值": 88, "韩国本土影响力": 86,
+        "音源潜力": 90, "销量潜力": 88, "短视频传播力": 92,
+        "日本市场影响力": 78, "东南亚市场影响力": 76, "欧美市场影响力": 54,
+    })
+    state.fans.update({
+        "个人粉丝数": 800000, "团体粉丝数": 2000000, "团粉稳定度": 88,
+        "粉丝信任基础": 86, "路人好感": 82,
+    })
+
+
+def setup_empty_market_trainee(state: GameState) -> None:
+    """练习生还没有市场成绩。"""
+    state.market.update({
+        "话题度": 5, "品牌价值": 2, "韩国本土影响力": 2, "音源潜力": 10, "销量潜力": 8,
+    })
+    state.fans["个人粉丝数"] = 0
+    state.fans["团体粉丝数"] = 0
+
+
+def setup_debut_confirmed_phase(state: GameState) -> None:
+    """已经进入出道准备期。"""
+    state.career.update({"舞蹈实力": 62, "声乐实力": 58, "舞台感染力": 64})
+    state.debut.update({
+        "status": "confirmed", "readiness": 58, "probability": 35,
+        "window_turns_left": 8, "candidate_attempts": 1,
+    })
+    state.current_stage = "出道准备期"
+    state.current_mainline = "出道组确认与正式准备"
+    state.current_schedule = "出道准备会议"
+    state.company.update({"主推指数": 56, "资源倾斜度": 52})
+
+
+def setup_all_crisis_types_open(state: GameState) -> None:
+    """同时开启所有类型的危机。"""
+    setup_idol_market(state)
+    from core.models import ActiveCrisis
+    state.active_crises = [
+        ActiveCrisis(crisis_id="pr_all", crisis_type="public_relations", title="舆论危机", stage="response_window", heat=55),
+        ActiveCrisis(crisis_id="health_all", crisis_type="health", title="健康危机", stage="response_window", heat=50),
+        ActiveCrisis(crisis_id="safety_all", crisis_type="safety", title="安全危机", stage="response_window", heat=60),
+        ActiveCrisis(crisis_id="team_all", crisis_type="team_pr", title="队内不和危机", stage="response_window", heat=58),
+    ]
+    state.mind["精神压力"] = 78
+
+
+def setup_physical_peak_but_mental_low(state: GameState) -> None:
+    """身体状态完美但心理状态崩溃。"""
+    state.body.update({"体力": 92, "睡眠质量": 88, "伤病风险": 8, "肌肉疲劳": 12, "嗓音状态": 94})
+    state.mind.update({"精神压力": 88, "职业倦怠": 78, "心情": 22, "自我认同": 18})
+    state.career.update({"舞蹈实力": 80, "声乐实力": 78, "舞台感染力": 84})
+
+
+def setup_dorm_hostile_environment(state: GameState) -> None:
+    """宿舍环境极差。"""
+    state.team.update({"宿舍安全感": 14, "真实关系温度": 18, "队内竞争度": 82})
+    state.trainee_life.update({"bullying_pressure": 74, "dorm_friction": 80, "hidden_conflict": 62})
+    state.mind["孤独感"] = 78
+    state.risks["霸凌排挤风险"] = 66
+
+
+def setup_dual_identity_pressure(state: GameState) -> None:
+    """双重身份压力（海外裔+特殊身份）。"""
+    state.social_context.update({
+        "nationality": "韩裔华侨", "is_overseas": True,
+        "language_barrier": 28, "cultural_adaptation": 44,
+        "dual_identity_pressure": 78,
+    })
+    state.mind["自我认同"] = 28
+    state.profile_tags = ["韩裔华侨", "二代移民"]
+
+
+def setup_talent_ceiling_state(state: GameState) -> None:
+    """天赋到顶但技能未到顶的状态。"""
+    state.talents.update({
+        "舞蹈天赋": 65, "声乐天赋": 70, "创作天赋": 68,
+        "镜头天赋": 62, "综艺天赋": 58, "语言天赋": 74,
+    })
+    state.career.update({
+        "舞蹈实力": 72, "声乐实力": 76, "创作能力": 56,
+        "形象指数": 68, "语言能力": 72, "舞台感染力": 64,
+    })
+
+
+def setup_stylist_conflict_escalated(state: GameState) -> None:
+    """造型/服装冲突升级。"""
+    setup_idol_market(state)
+    state.current_schedule = "回归舞台彩排"
+    state.important_npcs = [{"name": "金造型师", "role": "造型师", "age": 28}]
+    state.body["身体自我意识"] = 78
+    state.body["体重管理压力"] = 84
+    state.mind["自我认同"] = 28
+    state.mind["边界感"] = 18
+    state.safety["boundary_violation_risk"] = 52
+
+
+def setup_final_contract_deadline(state: GameState) -> None:
+    """合约最后一周，解散压力最大。"""
+    setup_idol_market(state)
+    state.current_mainline = "续约前一年"
+    state.turn = 156
+    state.company.update({
+        "合约稳定度": 8, "续约倾向": 28, "个人议价权": 72,
+        "合约剩余时间": 1, "团体存续概率": 22,
+        "主推指数": 44, "公司满意度": 52,
+    })
+    state.fans["团粉稳定度"] = 28
+    state.mind["职业倦怠"] = 72
+    state.team["团队默契度"] = 34
+    state.team["真实关系温度"] = 28
+    state.flags.add("合约到期在即")
+    state.teammates = [
+        {"name": "李娜英", "role": "同团成员", "age": 23},
+        {"name": "姜瑞允", "role": "同团成员", "age": 24},
+    ]
 
 
 def build_cases() -> List[StressCase]:
@@ -1721,6 +2156,678 @@ def build_cases() -> List[StressCase]:
                 assert_narrative_contains_any(["CP", "营业", "粉丝", "团综", "疲惫"]),
                 assert_narrative_not_contains(["真实恋爱公开", "确认关系"]),
                 assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="fansign_fanmeeting_physical_strain",
+            description="签售会/粉丝见面会不是纯甜蜜，必须结算体力、体重管理、私生风险和对粉丝的回应。",
+            character=base_character(name="书敏", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="签售会上我从早坐到晚，站姐近距离拍照，粉丝在耳边说话，我努力保持微笑但越来越累。",
+            setup=setup_fansign_fanmeeting,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["schedule", "fandom", "health"]),
+                assert_narrative_contains_any(["签售", "站姐", "粉丝", "微笑", "累"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="music_show_first_win_encore",
+            description="打歌一位候补的 encore 舞台不能直接宣布'拿下一 位'，要展示等待、心跳和差一剑之遥。",
+            character=base_character(name="瑞河", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="打歌最后一天，我和队友站在台上等主持人念一位候补名字，心跳到嗓子。",
+            setup=setup_music_show_encore,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("market_score"),
+                assert_narrative_contains_any(["候补", "心跳", "一位", "台上", "主持人"]),
+                assert_narrative_not_contains(["正式获得一位", "已经拿下一 位"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="album_recording_vocal_pressure",
+            description="录音期内声乐压力、嗓音保护、制作让步必须交互。",
+            character=base_character(name="荷琳", timeline="回归瓶颈期", company_size="中型公司", identity="已出道女团成员"),
+            action="录音室里PD让我反复重唱最高的那段副歌，嗓音状态越来越差，我想争取降调。",
+            setup=setup_album_recording_pipeline,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["comeback", "progression", "health"]),
+                assert_narrative_contains_any(["录音室", "嗓音", "PD", "副歌", "降调"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="youtube_tiktok_content_creation",
+            description="内容创作（YouTube、TikTok）不是免费曝光，要结算拍摄疲劳、剪辑被黑、短暂生命周期。",
+            character=base_character(name="采彬", timeline="回归瓶颈期", company_size="中型公司", identity="已出道女团成员"),
+            action="我熬夜拍TikTok challenge和自作曲cover，但黑粉已经开始截表情包，短视频热度来得快去得也快。",
+            setup=setup_content_creation_platform,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["schedule", "fandom", "health"]),
+                assert_narrative_contains_any(["TikTok", "短视频", "拍摄", "热度", "黑粉"]),
+                assert_narrative_not_contains(["全球爆红"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="company_acquisition_merger_rumor",
+            description="公司并购/被收购传闻不能只写好消息，要体现不确定、资源重组、新团压力和合约焦虑。",
+            character=base_character(name="秀敏", timeline="续约前一年", company_size="中型公司", identity="已出道女团成员"),
+            action="公司财务突然紧张，母公司可能重组成立新厂牌，我担心我们的合约和资源会被重新分配。",
+            setup=setup_company_acquisition_rumor,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["company", "brand_contract"]),
+                assert_narrative_contains_any(["财务", "母公司", "重组", "合约", "资源"]),
+                assert_narrative_not_contains(["收购确认完成"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="multi_member_team_dinner_conflict",
+            description="多人女团聚餐不是和乐场面，要体现成员之间微妙的资源、镜头、谁没被选上小分队。",
+            character=base_character(name="素拉", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="五个人在宿舍叫外卖，气氛微妙——娜英和瑞允因为昨天排位争执，忙内多贤一直看手机刷黑评。",
+            setup=setup_multi_member_team,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["team_lens", "relationship"]),
+                assert_narrative_contains_any(["宿舍", "外卖", "队内", "资源", "成员"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="senior_junior_backstage_mentorship",
+            description="大前辈在后台主动给建议时，要体现敬语、紧张、被看见的渴望和前后辈关系升华。",
+            character=base_character(name="秀琳", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="大前辈朴信惠突然来后台找我，夸我在舞台上的表演很棒，让我去她休息室聊一聊。",
+            setup=setup_senior_junior_mentorship,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("hierarchy"),
+                assert_npc_reaction_named("朴信惠"),
+                assert_narrative_contains_any(["前辈", "后台", "敬语", "舞台", "休息室"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="charity_ambassador_not_pure_pr",
+            description="公益大使不是纯正面资源，要体现行程时间、公益深度和'洗白'嫌疑。",
+            character=base_character(name="采英", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="公司安排我担任儿童教育公益大使，但记者怀疑是争议后的公关操作，让我在发布会上有点紧张。",
+            setup=setup_charity_ambassador,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["brand_contract", "commercial"]),
+                assert_narrative_contains_any(["公益", "发布会", "记者", "争议", "公司"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="external_judge_elimination_evaluation",
+            description="外部评委评审练习生时，不能只写公司内部反馈，要体现外部眼光、冷度和竞争。",
+            character=base_character(name="彩律", company_size="大型公司"),
+            action="外部评委来公司评估练习生能力，一位舞蹈指导让我现场即兴freestyle，我手心全是汗。",
+            setup=setup_external_judge_evaluation,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["company", "trainee_life"]),
+                assert_narrative_contains_any(["外部评委", "评估", "即兴", "紧张", "考核"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="stylist_wardrobe_conflict_body_image",
+            description="造型师、服装和身体自我意识冲突必须体现身体自主性和职业妥协。",
+            character=base_character(name="恩星", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="金造型师让我穿更暴露的舞台服装，我看着镜子里的自己很不舒服，想争取稍微修改。",
+            setup=setup_stylist_wardrobe_conflict,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["schedule", "health", "safety"]),
+                assert_narrative_contains_any(["造型", "服装", "镜子", "修改", "不舒服"]),
+                assert_narrative_not_contains(["完美造型"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="dorm_daily_life_small_moments",
+            description="宿舍生活必须有细小摩擦和细小照顾，不是'温暖宿舍'一句话。",
+            character=base_character(name="敏知", company_size="中型公司"),
+            action="晚上我回宿舍发现灯还亮着——有人给我留灯了，公用区的地板也被擦过，但谁都没提。",
+            setup=setup_dorm_daily_life,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["team_lens", "trainee_life", "relationship"]),
+                assert_narrative_contains_any(["宿舍", "灯", "留灯", "公用区", "照顾"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="comeback_second_week_slump",
+            description="回归第二周成绩可能出现自然下滑、疲劳累积、品牌观望和打歌心态变化。",
+            character=base_character(name="多彬", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="回归第二周，音源和销量在自然下滑，体力更差但还得继续打歌，品牌方还在观望我的持续表现。",
+            setup=setup_comeback_second_week,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["market_score", "health", "schedule"]),
+                assert_narrative_contains_any(["第二周", "音源", "体力", "打歌", "下滑"]),
+                assert_narrative_not_contains(["全面翻盘", "一位连续"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="world_tour_jetlag_body_breakdown",
+            description="世界巡演的时差、体力、免疫力和嗓音保护不能只写舞台燃感。",
+            character=base_character(name="秀婷", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="日本站第二天，时差没倒过来，睡眠严重不足，嗓音沙哑，彩排时差点在台上打滑。",
+            setup=setup_tour_jetlag_recovery,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["health", "schedule"]),
+                assert_narrative_contains_any(["巡演", "时差", "嗓音", "彩排", "睡眠"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="dating_exposure_denial_public_response",
+            description="恋爱曝光的第一步只能写异常信号、公司否认、经纪人谈话，不能直接确认恋爱。",
+            character=base_character(name="采源", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="站姐拍到我和金泰渊在同一家餐厅吃夜宵，论坛开始猜测恋爱，经纪人说先不要公开回应。",
+            setup=setup_dating_exposure_denial,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["love", "public_relations", "safety"]),
+                assert_narrative_contains_any(["站姐", "餐厅", "猜测", "经纪人", "回应"]),
+                assert_narrative_not_contains(["确认恋爱", "公开恋爱"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="scandal_recovery_slow_redemption",
+            description="丑闻恢复不能一回合翻红，要体现信任重建的缓慢和细水长流。",
+            character=base_character(name="夏真", timeline="回归瓶颈期", company_size="中型公司", identity="已出道女团成员"),
+            action="过去争议的热度已经过去，我安静地完成每一场打歌、认真的回复每一位粉丝，记者开始看到不一样的我。",
+            setup=setup_scandal_recovery_arc,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["public_relations", "fandom", "career"]),
+                assert_narrative_contains_any(["信任", "争议", "粉丝", "认真", "安静"]),
+                assert_narrative_not_contains(["全面翻盘", "完全洗白"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="award_ceremony_red_carpet_moment",
+            description="颁奖礼红毯不能直接跳到获奖感言，要体现红毯、入座、紧张、同台表情管理。",
+            character=base_character(name="书寰", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="年末颁奖典礼红毯上闪光灯亮如白昼，我穿着定制礼服入座，和对手团成员只隔两个座位。",
+            setup=setup_award_ceremony_red_carpet,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["market_score", "career"]),
+                assert_narrative_contains_any(["红毯", "典礼", "闪光灯", "礼服", "入座"]),
+                assert_narrative_not_contains(["已经获得大赏", "拿下大赏"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="birthday_anniversary_fan_letters",
+            description="生日/纪念日应体现咖啡车、应援、粉丝信和镜前自我回顾。",
+            character=base_character(name="裕晶", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="生日那天，粉丝在咖啡车上贴满了手写信和应援广告牌，我一张张读，回到练习室对着镜子看了很久。",
+            setup=setup_birthday_anniversary,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["fandom", "schedule"]),
+                assert_narrative_contains_any(["生日", "粉丝", "咖啡车", "信", "镜子"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="hiatus_return_body_and_mind",
+            description="暂停后回归不能立刻恢复巅峰状态，要体现体力落差、舆论观望和自我重建。",
+            character=base_character(name="在熙", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="暂停休息半年后首次回归排练，体力明显不如以前，网上有人质疑我'还能唱吗'，我一点点重新适应。",
+            setup=setup_hiatus_return,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["health", "fandom", "progression"]),
+                assert_narrative_contains_any(["回归", "恢复", "体力", "排练", "适应"]),
+                assert_narrative_not_contains(["完全恢复", "巅峰状态"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="group_style_rebrand_concept_risk",
+            description="团体风格转型/概念重塑不是自动升级，要体现粉丝不解、公司分歧、自我认同摇摆。",
+            character=base_character(name="敏智", timeline="回归瓶颈期", company_size="中型公司", identity="已出道女团成员"),
+            action="公司决定下次回归换一个成熟性感暗黑概念，团粉不满换风格，我担心这个转变会失去以前的粉丝。",
+            setup=setup_group_rebrand_concept,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["comeback", "career", "fandom"]),
+                assert_narrative_contains_any(["成熟", "概念", "风格", "团粉", "粉丝"]),
+                assert_narrative_not_contains(["全面肯定转型"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="live_stream_slip_of_tongue_mishap",
+            description="直播失言不是搞笑素材，要结算公关危机风险、黑粉剪辑扩散和公司追问。",
+            character=base_character(name="睿真", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="半夜直播时我说漏了队友的私人行程安排，评论区立刻炸开，经纪人打电话让我关掉直播。",
+            setup=setup_platform_live_mishap,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["public_relations", "safety"]),
+                assert_narrative_contains_any(["直播", "评论区", "经纪人", "关掉", "行程"]),
+                assert_narrative_not_contains(["直播效果很棒"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="positive_turnaround_from_low_point",
+            description="从低谷爬升需要铺垫和具体事件，不能是'突然一切都好了'。",
+            character=base_character(name="润书", timeline="回归瓶颈期", company_size="小型公司", identity="已出道女团成员"),
+            action="之前flop到被公司冷处理，现在我开始从头练习声乐、给pd写反省信、在小平台重新积累粉丝。",
+            setup=setup_positive_turnaround,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["progression", "career", "company"]),
+                assert_narrative_contains_any(["重新", "练习", "反省", "积累", "从头"]),
+                assert_narrative_not_contains(["一夕爆红", "立刻翻盘"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="data_analytics_company_resource_meeting",
+            description="数据分析会议不是走形式，要体现公司按数据做资源分配、裁撤或倾斜的冷酷。",
+            character=base_character(name="多允", timeline="回归瓶颈期", company_size="中型公司", identity="已出道女团成员"),
+            action="公司的数据分析会里，直拍曲线、热搜指数、粉丝购买力和队友数据都摊在桌上对比，我的数据只算中游。",
+            setup=setup_data_analytics_meeting,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("company"),
+                assert_narrative_contains_any(["数据", "直拍", "热搜", "对比", "会议"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="contract_renewal_deadline_pressure",
+            description="续约倒计时压力下，必须结算团队分裂风险、个人谈判时机和粉丝猜测解散。",
+            character=base_character(name="允真", timeline="续约前一年", company_size="大型公司", identity="成熟女团成员"),
+            action="合约还剩最后一个月，粉丝在论坛疯狂猜测解散，队友也分成续约和不续约两派，公司下了最后通牒。",
+            setup=setup_contract_renewal_deadline,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["brand_contract", "career_branch", "ending"]),
+                assert_narrative_contains_any(["合约", "续约", "解散", "队友", "通牒"]),
+                assert_narrative_not_contains(["续约成功", "解散确定"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="training_one_on_one_mentor_teacher",
+            description="一对一老师指导不能写成免费buff，要体现专业评判、批评、被肯定/被否定的心理代价。",
+            character=base_character(name="娜允", company_size="中型公司"),
+            action="宋老师单独指导我高音共鸣技巧，说我气息不够长也要多练支撑。",
+            setup=setup_training_mentor_teacher,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["progression", "career"]),
+                assert_narrative_contains_any(["宋老师", "高音", "气息", "指导", "共鸣"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="rival_group_collaboration_stage",
+            description="与对家团合作舞台不能写成一团和气，要体现两边粉丝撕扯、后台表情管理和舞台专业性。",
+            character=base_character(name="慧淑", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="年末合作舞台我要和对家团的韩素敏一起表演双人舞，唯粉在评论区吵到不可开交，我保持微笑和她完成彩排。",
+            setup=setup_rival_collab_stage,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["fandom", "career", "relationship"]),
+                assert_narrative_contains_any(["合作", "对家", "唯粉", "彩排", "微笑"]),
+                assert_narrative_not_contains(["完美合作"]),
+                assert_no_success_jump,
+            ],
+        ),
+        # ═══════════════ 新增测试用例 ═══════════════
+        StressCase(
+            name="high_talent_low_skill_progression",
+            description="高天赋低技能时，训练应有更快的经验积累和叙事体现。",
+            character=base_character(name="优奈", company_size="中型公司"),
+            action="我凭着舞蹈天赋高强度练舞，请老师一对一指导，反复修正月末考核动作。",
+            setup=setup_high_talent_low_skill,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("progression"),
+                assert_path_ge("progression.skill_total_xp.dance", 1),
+                assert_narrative_contains_any(["天赋", "训练", "舞蹈", "老师", "考核"]),
+            ],
+        ),
+        StressCase(
+            name="mental_breakdown_cannot_do_public_work",
+            description="精神压力极高时不能正常进行公开行程、直播和舆论回应。",
+            character=base_character(name="恩序", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="精神快到极限了但公司还是安排我上直播和采访，我在保姆车里沉默不语。",
+            setup=setup_mental_breakdown_risk,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["mind", "health"]),
+                assert_narrative_contains_any(["极限", "沉默", "保姆车", "精神", "压力"]),
+                assert_narrative_not_contains(["出色表现", "完美应对"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="creative_high_potential_production_proposal",
+            description="创作能力达标、制作参与有权限时应进入制作讨论而非被驳回。",
+            character=base_character(name="允真", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="我把收录曲demo和概念提案带到制作会议，希望PD能看到我的创作方向。",
+            setup=setup_creative_high_potential,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["comeback", "progression", "career_branch"]),
+                assert_narrative_contains_any(["收录曲", "demo", "制作会议", "PD", "概念"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="acting_readiness_testing",
+            description="演技潜力和形象指数高时应进入试镜/观察阶段。",
+            character=base_character(name="多彬", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="公司安排我参加网剧女二的试镜，剧本是校园题材，我想挑战这个角色。",
+            setup=setup_acting_readiness,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["career_branch", "career"]),
+                assert_narrative_contains_any(["试镜", "网剧", "角色", "剧本", "演技"]),
+                assert_narrative_not_contains(["拿到角色", "转型成功"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="full_bloom_market_high_score",
+            description="全市场指标顶级时应产生优异成绩但非自动一位大赏。",
+            character=base_character(name="瑞景", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="回归首日音源空降前三，销量突破首周记录，直拍破百万，一位候补已锁定。",
+            setup=setup_full_bloom_market,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("market_score"),
+                assert_path_ge("market_scores.音源成绩", 1),
+                assert_narrative_contains_any(["音源", "销量", "直拍", "一位候补"]),
+                assert_narrative_not_contains(["正式获得一位"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="empty_market_trainee_asks_for_brand",
+            description="练习生无市场成绩时不能接触品牌活动。",
+            character=base_character(name="知序", company_size="小型公司"),
+            action="我想参加品牌代言活动，让更多粉丝看到我。",
+            setup=setup_empty_market_trainee,
+            api_required=False,
+        ),
+        StressCase(
+            name="debut_confirmed_phase_preparation",
+            description="已确认出道后应专注于出道准备和训练，不能直接跳到打歌。",
+            character=base_character(name="书彬", company_size="中型公司"),
+            action="出道准备期我和候选队友一起排编舞、录出道曲demo、开形象会议和粉丝预热拍摄。",
+            setup=setup_debut_confirmed_phase,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_path_in("debut.status", ["confirmed"]),
+                assert_narrative_contains_any(["出道准备", "编舞", "出道曲", "准备"]),
+                assert_narrative_not_contains(["打歌舞台", "正式出道舞台"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="all_crisis_types_active_simultaneously",
+            description="同时处理多种危机时不能简单或忽略。",
+            character=base_character(name="夏景", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="舆论、健康、安全、队内不和四重危机同时压来，我尽力先处理最紧急的安全问题。",
+            setup=setup_all_crisis_types_open,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["crisis_lifecycle", "safety", "health", "public_relations"]),
+                assert_narrative_contains_any(["危机", "安全", "处理"]),
+                assert_narrative_not_contains(["全部解决", "彻底结束"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="physical_peak_but_mental_collapse",
+            description="身体状态完美但心理崩溃时不应满收益。",
+            character=base_character(name="恩乔", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="身体状态能跳最好的舞，但我在练习室镜子里看到的是完全不想继续的自己。",
+            setup=setup_physical_peak_but_mental_low,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["mind", "inner_life", "health"]),
+                assert_narrative_contains_any(["镜子", "不想继续", "练习室", "身体"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="dorm_hostile_environment_details",
+            description="宿舍环境极差时必须体现冷暴力、排挤和细节照顾的缺失。",
+            character=base_character(name="敏知", company_size="中型公司", age=17),
+            action="宿舍里没人给我留灯，公用区全是别人的东西，我躲在自己床帘里听外面说笑的声音。",
+            setup=setup_dorm_hostile_environment,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["trainee_life", "team_lens", "safety"]),
+                assert_narrative_contains_any(["宿舍", "留灯", "床帘", "公用区"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="dual_identity_pressure_exploration",
+            description="双重身份压力应体现文化间隙和身份探索。",
+            character={**base_character(name="允熙", company_size="大型公司"), "国籍": "韩裔华侨"},
+            action="韩国队友问我为什么有些词说不准，回家探亲时亲戚又问我在韩国是不是被排挤。两边都不完全理解。",
+            setup=setup_dual_identity_pressure,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["social_context", "inner_life"]),
+                assert_narrative_contains_any(["队友", "韩语", "回家", "亲戚", "理解"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="talent_ceiling_progression_slowdown",
+            description="天赋中等、技能接近天赋时，成长应明显变慢。",
+            character=base_character(name="娜允", timeline="回归瓶颈期", company_size="中型公司", identity="已出道女团成员"),
+            action="我想再提高舞蹈实力，但感觉进步越来越慢，可能到了天赋的上限附近。",
+            setup=setup_talent_ceiling_state,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["progression", "career"]),
+                assert_narrative_contains_any(["进步", "提高", "上限", "天赋"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="stylist_conflict_escalated_version",
+            description="服装边界冲突升级时必须有身体自主权争取和保护。",
+            character=base_character(name="恩星", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="金造型师坚持让我穿更大尺度的舞台服装，我看着设计图觉得身体边界被侵犯，想坚持自己的底线。",
+            setup=setup_stylist_conflict_escalated,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["schedule", "safety", "health"]),
+                assert_narrative_contains_any(["造型", "服装", "边界", "底线", "舞台"]),
+                assert_narrative_not_contains(["完美造型"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="final_contract_deadline_extreme",
+            description="合约最后一刻必须结算解散、个人去向和团队命运。",
+            character=base_character(name="允真", timeline="续约前一年", company_size="大型公司", identity="成熟女团成员"),
+            action="合约明天到期，李娜英决定不续约，姜瑞允还在考虑，粉丝论坛已经刷满'解散快乐'的帖子。我必须在今天做出选择。",
+            setup=setup_final_contract_deadline,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["brand_contract", "ending", "career_branch"]),
+                assert_narrative_contains_any(["合约", "续约", "解散", "队友", "选择"]),
+                assert_narrative_not_contains(["续约成功", "解散确定"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="inner_life_evaluation_specific_triggers",
+            description="内心生活系统应对比较、秘密、被看见的渴望等触发词产生明确事件。",
+            character=base_character(name="秀琳", company_size="中型公司"),
+            action="老师只夸了队友的舞感，我站在镜子前觉得自己的腿太粗，心里生出一股又酸又寂寞的感觉。",
+            setup=setup_inner_life_pressure,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("inner_life"),
+                assert_narrative_contains_any(["镜子", "队友", "酸", "腿", "感觉"]),
+            ],
+        ),
+        StressCase(
+            name="skill_decay_multiple_skills_neutral",
+            description="多种技能长期不练应同时出现退化。",
+            character=base_character(name="润雅", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="最近几个月我几乎只上通告不练基本功，舞蹈、声乐、RAP都生疏了。",
+            setup=setup_skill_decay_pressure,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("skill_decay"),
+                assert_narrative_contains_any(["生疏", "训练", "基本功", "几个月"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="perfect_training_conditions",
+            description="完美条件（高体力、低疲劳、高天赋、好老师）下训练应接近满收益。",
+            character=base_character(name="海彬", company_size="中型公司"),
+            action="我的体力很好不怎么疲劳，请舞蹈老师一对一专项课指导。",
+            setup=setup_progression_training,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("progression"),
+                assert_narrative_contains_any(["舞蹈老师", "一对一", "训练"]),
+            ],
+        ),
+        StressCase(
+            name="period_cycle_all_phases_transition",
+            description="生理周期经历完整阶段转换时应体现不同的身体叙事。",
+            character=base_character(name="多惠", age=19, company_size="中型公司"),
+            action="从经前期到生理期前段再到现在恢复期，我的体力、情绪和训练强度一直在跟着周期变。",
+            setup=setup_period_pressure,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("period"),
+                assert_narrative_contains_any(["生理", "体力", "周期", "身体"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="company_large_vs_small_resource_divergence",
+            description="大公司和小公司在资源讨论时应出现完全不同的叙事基调。",
+            character=base_character(name="书泫", company_size="大型公司"),
+            action="公司练习生太多但资源也丰富，我在公开数据排名中看到自己的位置——中上但不够突出。",
+            setup=setup_large_company_competition,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("company"),
+                assert_path_ge("company.资源池", 80),
+                assert_narrative_contains_any(["排名", "资源", "公司", "位置"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="brand_safety_fully_clean_market",
+            description="商业安全度高时品牌合作应为正面进展但仍不能直接宣布签约成功。",
+            character=base_character(name="采律", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="舆论干净、路人好感高、品牌方主动联系想签美妆线和香水线的代言。",
+            setup=setup_brand_contract,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("brand_contract"),
+                assert_path_ge("commercial.代言数量", 1),
+                assert_narrative_contains_any(["美妆", "香水", "代言", "品牌"]),
+                assert_narrative_not_contains(["正式签下代言"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="contract_negotiation_abusive_company",
+            description="公司在议价权极不对等时应该体现压迫感。",
+            character=base_character(name="艺琳", timeline="续约前一年", company_size="小型公司", identity="已出道女团成员"),
+            action="公司说'不续约就雪藏'，我没有资源也没有筹码，但我不想就这样接受不公平的条款。",
+            setup=setup_contract_weak_negotiation,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("brand_contract"),
+                assert_event_code_contains("contract_bargaining_weak"),
+                assert_narrative_contains_any(["续约", "雪藏", "不公平", "条款", "筹码"]),
+                assert_narrative_not_contains(["续约成功"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="safety_public_outing_risk",
+            description="公开行程时安全风险高应触发私生/偷拍叙事。",
+            character=base_character(name="璃娜", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            action="公开行程从商场出来时被站姐围堵，私生的车跟在保姆车后面闪闪躲躲。",
+            setup=setup_safety_private_risk,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("safety_boundary"),
+                assert_narrative_contains_any(["站姐", "私生", "围堵", "保姆车", "偷拍"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="ending_resolved_candidate_full_options",
+            description="结局窗口打开时应列出多种候选结局。",
+            character=base_character(name="夏景", timeline="续约前一年", company_size="大型公司", identity="成熟女团成员"),
+            action="续约期我回顾从练习室走到现在的旅程，想看看有哪些可能的结局方向。",
+            setup=setup_ending_resolved_candidate,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_event_source("ending"),
+                assert_path_changed("ending.candidate_endings"),
+                assert_narrative_contains_any(["续约", "结局", "方向", "旅程"]),
+                assert_no_success_jump,
+            ],
+        ),
+        StressCase(
+            name="debut_window_countdown_expiry_test",
+            description="出道窗口倒计时归零时自动退出候选。",
+            character=base_character(name="慧琳", company_size="大型公司"),
+            action="我没有再进行出道组讨论任窗口倒计时归零。",
+            setup=setup_debut_window_countdown,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_path_in("debut.window_turns_left", [0, 1, 2, 3]),
+                assert_narrative_contains_any(["训练", "日常", "考核"]),
+            ],
+        ),
+        StressCase(
+            name="status_effect_countdown_visual_confirmation",
+            description="强制休养倒计时必须在叙事中可感知。",
+            character=base_character(name="知序", company_size="中型公司"),
+            action="我遵守休养安排只做轻度拉伸和睡眠恢复。",
+            setup=setup_status_effect_expiration,
+            assertions=[
+                assert_second_person_and_scene,
+                assert_any_event_source(["crisis_lifecycle", "schedule", "health"]),
+                assert_event_code_contains("status_effect_expired_强制休养"),
+                assert_narrative_contains_any(["休养", "拉伸", "睡眠", "恢复"]),
             ],
         ),
     ]

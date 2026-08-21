@@ -39,7 +39,7 @@ def base_diff_for_action(action: str, state: GameState) -> Dict[str, int]:
     text = action.lower()
     diff: Dict[str, int] = {}
 
-    if any(word in action for word in ["舞蹈", "跳舞", "编舞", "热身", "练动作", "练习", "加练", "练舞"]):
+    if any(word in action for word in ["舞蹈", "跳舞", "编舞", "热身", "练动作", "练习", "加练", "练舞", "排练", "彩排"]):
         _add(diff, "职业属性.舞蹈实力", 1)
         _add(diff, "身体状态.体力", -8)
         _add(diff, "身体状态.肌肉疲劳", 5)

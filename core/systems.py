@@ -9,6 +9,8 @@ MAINLINE_WORDS = ["出道", "回归", "一位", "大赏", "颁奖", "续约", "�
 FOCUS_WORDS = ["考核", "会议", "镜头", "part", "center", "分量", "资源", "概念", "风格", "制作", "demo", "团综", "直播", "签售", "综艺", "队友", "谈心", "品牌", "代言", "杂志", "商业", "直拍", "榜单", "销量", "音源"]
 
 def classify_turn(action: str, state: GameState) -> RouteInfo:
+    active_crisis = bool(state.active_crises)
+
     if any(word in action for word in CRISIS_WORDS):
         return RouteInfo(model_tier="pro", turn_kind="crisis", reason="危机/公关/安全/严重关系事件，自动使用 Pro。")
     if any(word in action for word in MAINLINE_WORDS):
@@ -16,8 +18,10 @@ def classify_turn(action: str, state: GameState) -> RouteInfo:
             return RouteInfo(model_tier="flash", turn_kind="focus", reason="练习生阶段的正式爱豆行动已被阶段门控降级，使用 Flash。")
         return RouteInfo(model_tier="pro", turn_kind="mainline", reason="主线职业节点，自动使用 Pro。")
     if any(word in action for word in FOCUS_WORDS):
+        if active_crisis:
+            return RouteInfo(model_tier="pro", turn_kind="crisis", reason="在危机背景下执行重点行动，升级为危机环境。")
         return RouteInfo(model_tier="flash", turn_kind="focus", reason="重点剧情回合，使用 Flash。")
-    if state.active_crises:
+    if active_crisis:
         return RouteInfo(model_tier="pro", turn_kind="crisis", reason="存在未关闭危机窗口，自动使用 Pro。")
     return RouteInfo(model_tier="flash", turn_kind="ordinary", reason="普通养成/日常推进回合，使用 Flash。")
 

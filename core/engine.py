@@ -6,7 +6,7 @@ from typing import Dict, Any
 from core.config import AppConfig
 from core.llm import get_llm_provider, parse_turn_response
 from core.models import GameState, TurnResponse, Choice, RouteInfo, SystemEvent
-from core.prompts import build_messages
+from core.prompts import build_messages, polish_narrative
 from core.rules import base_diff_for_action, apply_diff, sanitize_suggested_diff
 from core.storage import SaveStorage
 from core.systems import classify_turn, evaluate_all_systems
@@ -212,6 +212,8 @@ class TurnEngine:
         messages = build_messages(working_state, action, base_diff, system_diff, system_events, route_info, validation)
         raw = self.provider.generate(messages, model=actual_model)
         response = parse_turn_response(raw)
+        if response.narrative:
+            response.narrative = polish_narrative(response.narrative, self.provider, self.config.model_for_tier("flash"))
         response_relationship_targets = register_response_npcs(working_state, response, action)
         if not relationship_events and len(response_relationship_targets) == 1:
             late_relationship_events, late_relationship_diff = evaluate_relationship_system(

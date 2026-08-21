@@ -14,7 +14,7 @@ class LLMError(RuntimeError):
 
 
 class BaseProvider:
-    def generate(self, messages: List[Dict[str, str]], model: str | None = None) -> str:
+    def generate(self, messages: List[Dict[str, str]], model: str | None = None, json_mode: bool = True) -> str:
         raise NotImplementedError
 
 
@@ -22,7 +22,7 @@ class DeepSeekProvider(BaseProvider):
     def __init__(self, config: AppConfig) -> None:
         self.config = config
 
-    def generate(self, messages: List[Dict[str, str]], model: str | None = None) -> str:
+    def generate(self, messages: List[Dict[str, str]], model: str | None = None, json_mode: bool = True) -> str:
         api_key = self.config.get_api_key_fallback()
         if not api_key:
             raise LLMError("没有找到 DeepSeek API Key。请在设置页填写 API Key，或设置环境变量 DEEPSEEK_API_KEY。")
@@ -34,8 +34,9 @@ class DeepSeekProvider(BaseProvider):
             "messages": messages,
             "temperature": 0.85,
             "stream": False,
-            "response_format": {"type": "json_object"},
         }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
         url = self.config.base_url.rstrip("/") + "/chat/completions"
         logger.info(f"Calling DeepSeek: {url}, model={actual_model}")
         return self._post_chat(url, headers, payload, provider_name="DeepSeek")
@@ -64,7 +65,7 @@ class XiaomiMiMoProvider(BaseProvider):
     def __init__(self, config: AppConfig) -> None:
         self.config = config
 
-    def generate(self, messages: List[Dict[str, str]], model: str | None = None) -> str:
+    def generate(self, messages: List[Dict[str, str]], model: str | None = None, json_mode: bool = True) -> str:
         api_key = self.config.get_mimo_api_key_fallback()
         if not api_key:
             raise LLMError("没有找到 Xiaomi MiMo API Key。请在设置页填写 MiMo API Key，或设置环境变量 MIMO_API_KEY。")
@@ -82,8 +83,9 @@ class XiaomiMiMoProvider(BaseProvider):
             "top_p": 0.95,
             "stream": False,
             "thinking": {"type": "disabled"},
-            "response_format": {"type": "json_object"},
         }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
         url = self.config.mimo_base_url.rstrip("/") + "/chat/completions"
         logger.info(f"Calling Xiaomi MiMo: {url}, model={actual_model}")
 

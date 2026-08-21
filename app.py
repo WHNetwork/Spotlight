@@ -40,10 +40,6 @@ class KpopApp(
         self.weekly_plan_controls = []
         self.submit_button = None
         self.thinking_banner = None
-        self.bgm_audio = None
-        self.bgm_enabled = False
-        self.bgm_button = None
-        self.bgm_button_label = None
         self.pinned_alerts = ft.Column(spacing=8, visible=False)
         self.alerts_expanded = False
         self.expanded_sections = {
@@ -69,7 +65,6 @@ class KpopApp(
     def clear(self) -> None:
         self.page.on_resize = None
         self.page.controls.clear()
-
 
 
 def main(page: ft.Page) -> None:

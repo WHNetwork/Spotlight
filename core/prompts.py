@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Any
+from loguru import logger
 from core.models import GameState, RouteInfo, SystemEvent
 from core.rules import threshold_warnings
 from core.action_validator import ActionValidationResult
@@ -43,7 +44,7 @@ def backend_rule_contract() -> Dict[str, object]:
             "不要直接宣布 Python 判定型结果必然成功，例如一位、获奖、续约成功、转型成功；需要依据 system_events 和 game_state 写成候补、机会、谈判或后果。",
             "suggested_diff 只能补充叙事造成的小幅变化；核心结算以 base_diff_calculated_by_python 与 system_diff_calculated_by_python 为准；所有 suggested_diff 数值必须是整数，不要输出 0.5、1.5 这类小数。",
             "如果玩家行动包含【本周安排】，本回合时间跨度是一周。普通事件写成周常训练/生活推进；重点事件写成这一周中的关键场景；危机事件写成危机在本周内爆发与处理；主线事件写成阶段节点在这一周内推进。",
-            "npc_reactions 可以带 role 和 age 字段；出现明确新人物时写清姓名和身份，后端会据此建立关系档案。",
+            "npc_reactions 可以带 role 和 age 字段；出现新人物时必须写明完整韩国姓名（如金多贤、李瑞渊），不得用外型描述（如短发女生、戴眼镜的前辈、高个子男生）代替姓名。后端会根据姓名建立关系档案，无名NPC不会被记录。",
             "不要凭空塞固定默认人物；若出现新 NPC，必须让 ta 在剧情、反应或事件里自然登场。",
             "公司真实意图、NPC隐藏心动、内部培养方向等隐藏信息只能通过场景暗示，不要上帝视角直说。",
             "如果 action_validation.normalized_action 与 original_action 不同，剧情必须执行 normalized_action，不能执行 original_action。",
@@ -73,6 +74,38 @@ def backend_rule_contract() -> Dict[str, object]:
             "合约条款",
         ],
     }
+
+POLISH_SYSTEM_PROMPT = """请只对下面文字做文风润色，不改变剧情、不改变人物关系、不新增事件。
+
+润色目标：去除 AI 味，让文字更自然、细腻、真实、有温度。
+
+具体要求：
+1. 删除剧情总结式句子，改成具体场景和动作。
+2. 删除模板化抒情（尤其是"这一刻、终于明白、像被击中、心脏漏拍、救赎、破碎、命运、光、全世界安静"等表达）。
+3. 降低对话解释功能，不要让人物把内心和主题直接说透。
+4. 增加生活细节和身体细节（衣角、汗、灯光、手机、鞋带、镜子、走廊声音、呼吸、停顿）。
+5. 保持克制，不要过度煽情，不要频繁哭、抱、崩溃。
+6. 保持原文信息量，只优化语言质感和叙事流动性。
+
+请直接输出润色后的正文，不要解释修改原因。"""
+
+
+def polish_narrative(original: str, provider, flash_model: str) -> str:
+    """对已生成的叙事文本进行文风润色，去除 AI 味。失败则返回原文。"""
+    if not original or not original.strip():
+        return original
+    try:
+        messages = [
+            {"role": "system", "content": POLISH_SYSTEM_PROMPT},
+            {"role": "user", "content": original},
+        ]
+        result = provider.generate(messages, model=flash_model, json_mode=False)
+        if result and result.strip():
+            return result.strip()
+    except Exception:
+        logger.exception("polish_narrative failed")
+    return original
+
 
 def build_messages(
     state: GameState,

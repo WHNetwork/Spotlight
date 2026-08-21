@@ -117,7 +117,25 @@ def _is_generic_npc_name(name: str) -> bool:
     text = str(name or "").strip()
     if not text:
         return True
-    return text in {"NPC", "npc", "人物", "人物1", "人物2", "人物3", "角色", "对方", "某人", "旁人"} or text.startswith("人物")
+    if text in {"NPC", "npc", "人物", "人物1", "人物2", "人物3", "角色", "对方", "某人", "旁人"} or text.startswith("人物"):
+        return True
+    role_only = {"练习生", "工作人员", "老师", "前辈", "后辈", "PD", "经纪人", "制作人", "造型师", "化妆师", "编舞老师"}
+    if text in role_only:
+        return True
+    physical_markers = [
+        "发型", "头发", "短发", "长发", "马尾", "辫",
+        "戴眼镜", "眼镜",
+        "个子", "高个", "矮个", "矮个子", "高个子",
+        "穿", "衣服", "外套", "T恤", "制服", "裤子", "裙子",
+        "门口", "旁边", "隔壁", "对面", "角落",
+        "女生", "男生", "女的", "男的", "那个人",
+    ]
+    for marker in physical_markers:
+        if marker in text:
+            return True
+    if len(text) > 6 and ("的" in text or "在" in text or "着" in text):
+        return True
+    return False
 
 
 def infer_role_from_text(name: str, text: str = "") -> str:
@@ -510,7 +528,20 @@ def evaluate_relationship_system(state: GameState, action: str, fallback_target:
     diff: Dict[str, int] = {}
     target_name = find_relationship_target(state, action) or fallback_target
     signals = classify_relationship_signals(action)
-    if not signals or not target_name:
+
+    if not signals:
+        return events, diff
+
+    if not target_name:
+        if "friendship" in signals:
+            events.append(_event(
+                "rel_social_interaction",
+                "社交互动",
+                "你在人群中感受到交流的涟漪，虽然还分不清谁的名字，但练习室的空气因为对话而变了一点。",
+                "info",
+                {"团队关系.真实关系温度": 1, "心理状态.孤独感": -1},
+                source_system="relationship",
+            ))
         return events, diff
     rel = state.relationships.setdefault(target_name, default_relationship(target_name))
     rel["professional_role_category"] = staff_role_category(str(rel.get("role", "")))

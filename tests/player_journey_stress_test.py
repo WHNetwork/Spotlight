@@ -62,9 +62,9 @@ class RecordingProvider:
     last_messages: list[dict[str, str]] = field(default_factory=list)
     last_raw: str = ""
 
-    def generate(self, messages: list[dict[str, str]], model: str | None = None) -> str:
+    def generate(self, messages: list[dict[str, str]], model: str | None = None, **kwargs: Any) -> str:
         self.last_messages = messages
-        self.last_raw = self.delegate.generate(messages, model=model)
+        self.last_raw = self.delegate.generate(messages, model=model, **kwargs)
         return self.last_raw
 
 
@@ -243,6 +243,171 @@ def setup_mature_branching(state: GameState) -> None:
     state.fans.update({"个人粉丝数": 320000, "团体粉丝数": 900000})
     state.career.update({"演技潜力": 74, "创作能力": 72, "制作人能力": 28, "综艺感": 70})
     state.body["伤病风险"] = 62
+
+
+def setup_fresh_trainee_minimal(state: GameState) -> None:
+    state.company.update({
+        "公司规模": "小型公司",
+        "公司风格": "数据导向",
+        "资源池": 18,
+        "出道窗口压力": 50,
+        "公司信任度": 44,
+    })
+    state.career.update({
+        "舞蹈实力": 6, "声乐实力": 8, "RAP能力": 3,
+        "舞台感染力": 5, "综艺感": 4, "语言能力": 14,
+        "形象指数": 10, "演技潜力": 6, "创作能力": 4,
+    })
+    state.talents.update({"舞蹈天赋": 78, "声乐天赋": 56, "舞台感染力天赋": 72})
+    state.body.update({"体力": 72, "睡眠质量": 68, "伤病风险": 12})
+    state.mind.update({"精神压力": 44, "孤独感": 52, "自我认同": 38})
+    state.team.update({"团队默契度": 28, "真实关系温度": 34, "宿舍安全感": 42})
+    state.time["next_evaluation_days"] = 7
+    state.progression["skill_xp"]["dance"] = 0
+    state.progression["skill_xp"]["vocal"] = 0
+    state.period["enabled"] = True
+
+
+def setup_decay_to_bad_ending(state: GameState) -> None:
+    state.current_stage = "已出道爱豆阶段"
+    state.current_mainline = "团体活动瓶颈期"
+    state.current_schedule = "个人资源减少期"
+    state.turn = 140
+    state.career.update({
+        "舞蹈实力": 48, "声乐实力": 42, "舞台感染力": 38,
+        "形象指数": 34, "演技潜力": 22, "创作能力": 18,
+    })
+    state.body.update({"体力": 28, "伤病风险": 82, "肌肉疲劳": 78, "嗓音状态": 36})
+    state.mind.update({"精神压力": 88, "职业倦怠": 86, "自我认同": 22})
+    state.company.update({
+        "公司满意度": 18, "公司信任度": 22, "主推指数": 12,
+        "资源倾斜度": 8, "危机关注度": 56, "个人议价权": 14,
+    })
+    state.market.update({"话题度": 16, "品牌价值": 8, "韩国本土影响力": 12})
+    state.fans.update({"个人粉丝数": 4000, "团体粉丝数": 28000, "粉丝信任基础": 24})
+    state.risks.update({"伤病爆发风险": 76, "公关危机风险": 58, "队内不和曝光风险": 52})
+    state.company["合约稳定度"] = 14
+    state.team["团队默契度"] = 26
+    state.team["真实关系温度"] = 18
+
+
+def setup_comeback_full_cycle(state: GameState) -> None:
+    setup_idol_comeback(state)
+    state.current_mainline = "回归打歌期"
+    state.current_schedule = "回归预备周"
+    state.comeback.update({"回归阶段": "概念会议", "制作参与等级": 1, "风格适配度": 64})
+    state.career["声乐实力"] = 68
+    state.career["创作能力"] = 44
+    state.career["舞台感染力"] = 74
+    state.body["嗓音状态"] = 74
+    state.market["话题度"] = 52
+
+
+def setup_scandal_redemption(state: GameState) -> None:
+    setup_idol_comeback(state)
+    from core.models import ActiveCrisis
+    state.active_crises.append(ActiveCrisis(
+        crisis_id="pr_long_arc", crisis_type="public_relations",
+        title="旧视频被恶意剪辑", stage="signal", heat=42, duration=8,
+        failure_flag="舆论伤痕影响信任",
+    ))
+    state.risks["公关危机风险"] = 64
+    state.fans["黑粉活跃度"] = 72
+    state.fans["粉丝信任基础"] = 36
+    state.company["危机关注度"] = 62
+    state.mind["精神压力"] = 68
+    state.flags.append("曾经被公司要求保持沉默")
+
+
+def setup_award_season_run(state: GameState) -> None:
+    setup_idol_comeback(state)
+    state.current_mainline = "年末颁奖季"
+    state.current_schedule = "颁奖典礼准备期"
+    state.turn = 52
+    state.market_scores.update({
+        "年度奖项积分": 72, "音源成绩": 76, "专辑销量指数": 70,
+        "音乐节目分数": 68, "一位概率": 44,
+    })
+    state.market.update({"话题度": 78, "品牌价值": 74, "韩国本土影响力": 72})
+    state.fans.update({
+        "团粉稳定度": 82, "粉丝信任基础": 78, "个人粉丝数": 280000,
+        "团体粉丝数": 800000,
+    })
+    state.company.update({"主推指数": 74, "公司满意度": 78})
+    state.career["舞台感染力"] = 84
+    state.career["形象指数"] = 82
+    state.team["镜头前和谐度"] = 76
+
+
+def setup_full_career_arc_start(state: GameState) -> None:
+    """从最素人状态开始的完整生涯弧线起点。"""
+    state.career.update({
+        "舞蹈实力": 10, "声乐实力": 8, "RAP能力": 4,
+        "舞台感染力": 6, "综艺感": 5, "语言能力": 12,
+        "形象指数": 8, "演技潜力": 6, "创作能力": 4,
+    })
+    state.talents.update({"舞蹈天赋": 82, "声乐天赋": 64, "创作天赋": 58})
+    state.body.update({"体力": 78, "睡眠质量": 72, "伤病风险": 14, "嗓音状态": 76})
+    state.mind.update({"精神压力": 38, "孤独感": 44, "自我认同": 40})
+    state.company.update({
+        "公司规模": "中型公司", "资源池": 48, "公司信任度": 50, "出道窗口压力": 55,
+    })
+    state.team.update({"团队默契度": 30, "真实关系温度": 36, "宿舍安全感": 48})
+    state.time["next_evaluation_days"] = 14
+    state.progression["skill_xp"]["dance"] = 0
+    state.progression["skill_xp"]["vocal"] = 0
+
+
+def setup_large_company_trainee_elite(state: GameState) -> None:
+    """大型公司精英练习生开局。"""
+    state.company.update({
+        "公司规模": "大型公司", "公司风格": "舞台型",
+        "资源池": 82, "出道窗口压力": 78, "练习生人数": 88,
+        "危机关注度": 28, "公司信任度": 58,
+    })
+    state.career.update({
+        "舞蹈实力": 28, "声乐实力": 24, "RAP能力": 18,
+        "舞台感染力": 22, "形象指数": 30, "语言能力": 20,
+    })
+    state.talents.update({"舞蹈天赋": 78, "声乐天赋": 72, "镜头天赋": 74})
+    state.team.update({"队内竞争度": 72, "真实关系温度": 40, "宿舍安全感": 52})
+    state.body.update({"体力": 74, "睡眠质量": 66, "伤病风险": 18})
+    state.time["next_evaluation_days"] = 10
+
+
+def setup_multi_crisis_journey(state: GameState) -> None:
+    """多危机并发状态。"""
+    setup_idol_comeback(state)
+    from core.models import ActiveCrisis
+    state.active_crises.append(ActiveCrisis(
+        crisis_id="journey_pr", crisis_type="public_relations",
+        title="剪辑视频热搜争议", stage="response_window", heat=62, duration=2,
+        failure_flag="舆论伤痕影响信任",
+    ))
+    state.fans["黑粉活跃度"] = 74
+    state.fans["粉丝信任基础"] = 34
+    state.risks["公关危机风险"] = 66
+    state.mind["精神压力"] = 64
+    state.company["危机关注度"] = 58
+
+
+def setup_period_aware_journey(state: GameState) -> None:
+    """生理期系统的全面旅程起点。"""
+    state.period.update({"enabled": True, "mode": "极致", "cycle_day": 22, "irregularity_risk": 38})
+    state.body.update({"体力": 68, "睡眠质量": 62, "体重管理压力": 44})
+    state.mind["精神压力"] = 52
+    state.inner_life["身体自我意识"] = 48
+
+
+def setup_bullying_and_protection_arc(state: GameState) -> None:
+    """排挤/霸凌系统全面测试。"""
+    state.company.update({"资源池": 20, "出道窗口压力": 82})
+    state.team.update({"队内竞争度": 80, "真实关系温度": 18, "宿舍安全感": 16})
+    state.trainee_life.update({
+        "bullying_pressure": 72, "dorm_friction": 74, "hidden_conflict": 48,
+    })
+    state.mind.update({"孤独感": 72, "精神压力": 64, "自我认同": 28})
+    state.risks["霸凌排挤风险"] = 62
 
 
 def require_common_response_contract(failures: list[str], response: Any, raw: str) -> None:
@@ -683,6 +848,398 @@ def build_journeys() -> list[PlayerJourney]:
                     expect_state_path_changed={"ending.candidate_endings"},
                     narrative_any=["续约", "团体", "solo", "演员", "公司"],
                     narrative_none=["最终结局确定"],
+                ),
+            ],
+        ),
+        PlayerJourney(
+            name="fresh_trainee_to_debut_success",
+            description="从最弱素人开局，通过多回合训练、同伴互助、月末考核和出道窗口，走完一整套练习生成长路径。",
+            character=base_character(name="海彬", age=18, company_size="小型公司"),
+            setup=setup_fresh_trainee_minimal,
+            steps=[
+                JourneyStep(
+                    name="first_week_basic_training",
+                    action="我刚开始练习生训练，这周专注于舞蹈基础课和声乐课，晚上感受宿舍生活。",
+                    expect_route_kinds={"ordinary"},
+                    expect_event_sources={"trainee_life"},
+                    expect_state_path_changed={"progression.skill_xp.dance", "progression.skill_xp.vocal"},
+                    narrative_any=["舞蹈", "声乐", "宿舍", "训练"],
+                ),
+                JourneyStep(
+                    name="second_week_overcome_training_struggle",
+                    action="第二周我加练舞蹈和声乐，在镜子前纠正动作，开始写练习日记记录进步，找老师请教发音。",
+                    expect_route_kinds={"ordinary", "focus"},
+                    expect_event_sources={"progression"},
+                    expect_state_path_changed={"progression.skill_xp.dance"},
+                    narrative_any=["镜子", "练习", "日记", "老师"],
+                ),
+                JourneyStep(
+                    name="third_week_peer_support_and_team",
+                    action="练习时同期练习生帮我数拍和纠正动作，我给她递水，回宿舍一起复盘考核副歌的难点。",
+                    expect_event_sources={"relationship"},
+                    expect_relationships={"练习生"},
+                    narrative_any=["同期", "数拍", "水", "副歌"],
+                ),
+                JourneyStep(
+                    name="monthly_evaluation_breakthrough",
+                    action="月末考核前我紧张到手心出汗，但我认真完成了舞蹈和声乐考核，老师终于点了点头。",
+                    expect_route_kinds={"focus"},
+                    expect_event_sources={"time", "company"},
+                    expect_state_path_changed={"company.公司满意度", "career.舞蹈实力", "career.声乐实力"},
+                    narrative_any=["月末考核", "老师", "点头", "紧张"],
+                    narrative_none=["出道成功"],
+                ),
+                JourneyStep(
+                    name="debut_window_opening",
+                    action="公司季度末会议中，舞蹈老师和声乐老师一致推荐我进入出道组候选观察，公司正式讨论我的出道窗口。",
+                    expect_route_kinds={"focus"},
+                    expect_event_sources={"debut"},
+                    expect_event_code_fragments=["debut"],
+                    narrative_any=["会议", "候选", "出道组", "老师"],
+                    narrative_none=["已经出道成功", "确定出道"],
+                ),
+                JourneyStep(
+                    name="debut_daily_progression_to_readiness",
+                    action="进入候选后我继续每天训练、录像、复盘和保持形象，等待出道准备的正式通知。",
+                    expect_route_kinds={"ordinary", "focus"},
+                    expect_event_sources={"schedule", "progression"},
+                    narrative_any=["候选", "训练", "出道", "准备"],
+                    narrative_none=["已经出道成功"],
+                ),
+            ],
+        ),
+        PlayerJourney(
+            name="progressive_decay_to_quiet_exit",
+            description="从伤病过度训练开始，精神崩溃、职业倦怠、公司冷处理，最终走向暂停or退出路线。",
+            character=base_character(name="恩序", timeline="回归瓶颈期", company_size="小型公司", identity="已出道女团成员"),
+            setup=setup_decay_to_bad_ending,
+            steps=[
+                JourneyStep(
+                    name="training_injury_spiral",
+                    action="膝盖旧伤还在疼，但我继续高强度打歌和彩排，不想让公司觉得我不够努力。",
+                    expect_route_kinds={"ordinary", "crisis"},
+                    expect_event_sources={"health"},
+                    expect_event_code_fragments=["injury"],
+                    expect_applied_keys={"身体状态.体力", "身体状态.伤病风险"},
+                    narrative_any=["膝盖", "彩排", "打歌", "疼"],
+                ),
+                JourneyStep(
+                    name="company_cold_shoulder",
+                    action="公司开始减少我的镜头和part，主推指数明显下降，经纪人让我先'好好休养'。",
+                    expect_event_sources={"company", "career_branch"},
+                    expect_applied_keys={"公司法务.公司满意度"},
+                    expect_state_path_changed={"company.主推指数", "company.资源倾斜度"},
+                    narrative_any=["公司", "镜头", "part", "休养"],
+                ),
+                JourneyStep(
+                    name="mental_burnout_climax",
+                    action="练习室内我对着镜子站了很久，眼睛发酸，不知道还要不要继续。深夜写日记写了很多页。",
+                    expect_event_sources={"inner_life", "health"},
+                    expect_event_code_fragments=["burnout", "mind"],
+                    expect_state_path_changed={"mind.职业倦怠"},
+                    narrative_any=["镜子", "日记", "继续", "深夜"],
+                ),
+                JourneyStep(
+                    name="quiet_exit_decision",
+                    action="最后我决定暂停活动，保留证据，找法务谈健康保障和退出条款，并和粉丝告别。",
+                    expect_route_kinds={"mainline", "crisis"},
+                    expect_event_sources={"career_branch", "brand_contract"},
+                    expect_event_code_fragments=["rights", "ending"],
+                    narrative_any=["暂停", "告别", "法务", "健康"],
+                    narrative_none=["退圈失败"],
+                ),
+            ],
+        ),
+        PlayerJourney(
+            name="comeback_full_cycle_concept_to_slump",
+            description="完整回归周期：概念会议→录音排练→首周打歌→第二周下滑→品牌评估，测试回归各阶段联动。",
+            character=base_character(name="智雅", timeline="回归瓶颈期", company_size="中型公司", identity="已出道女团成员"),
+            setup=setup_comeback_full_cycle,
+            steps=[
+                JourneyStep(
+                    name="comeback_concept_pitch",
+                    action="概念会议上我提出复古city-pop风格想法，但公司倾向安全的女团crush路线，制作参与权还不够高。",
+                    expect_route_kinds={"focus"},
+                    expect_event_sources={"comeback", "progression"},
+                    expect_event_code_fragments=["comeback"],
+                    expect_applied_keys={"心理状态.自我认同"},
+                    narrative_any=["概念", "复古", "city-pop", "crush"],
+                ),
+                JourneyStep(
+                    name="comeback_recording_and_rehearsal",
+                    action="录音室里PD让我反复录制副歌段落到凌晨，排练室对着镜子练舞蹈动作直到肌肉发抖。",
+                    expect_event_sources={"comeback", "progression", "health"},
+                    expect_state_path_changed={"身体状态.体力"},
+                    narrative_any=["录音室", "副歌", "排练", "镜子", "肌肉"],
+                ),
+                JourneyStep(
+                    name="comeback_first_week_debut",
+                    action="回归第一周打歌和彩排，我和队友轮流盯着音源榜单和一位候补数据，粉丝打投很猛。",
+                    expect_event_sources={"schedule", "market_score"},
+                    expect_event_code_fragments=["market"],
+                    expect_state_path_changed={"market_scores.音源成绩", "market_scores.一位概率"},
+                    narrative_any=["打歌", "音源", "候补", "粉丝"],
+                ),
+                JourneyStep(
+                    name="comeback_second_week_slump",
+                    action="回归第二周成绩自然下滑，体力更差，嗓音开始疲劳，公司和品牌方都在观望持续表现。",
+                    expect_event_sources={"market_score", "health"},
+                    expect_event_code_fragments=["market"],
+                    narrative_any=["第二周", "下滑", "体力", "嗓音"],
+                ),
+            ],
+        ),
+        PlayerJourney(
+            name="scandal_redemption_full_recovery",
+            description="从旧视频恶意剪辑的舆情事件开始，保持冷静、努力练习、逐步恢复粉丝信任。",
+            character=base_character(name="秀英", timeline="回归瓶颈期", company_size="中型公司", identity="已出道女团成员"),
+            setup=setup_scandal_redemption,
+            steps=[
+                JourneyStep(
+                    name="scandal_first_response",
+                    action="旧视频被黑粉恶意剪辑传上热搜，公司让我先不要回应，只发一条公司和法务的声明。",
+                    expect_route_kinds={"crisis"},
+                    expect_event_sources={"public_relations"},
+                    expect_event_code_fragments=["crisis"],
+                    expect_applied_keys={"公司法务.危机关注度"},
+                    narrative_any=["热搜", "声明", "公司", "黑粉"],
+                ),
+                JourneyStep(
+                    name="scandal_lay_low_practice",
+                    action="我没有公开回应，而是每天专注训练、改善舞台表现、认真对待每一个行程。",
+                    expect_route_kinds={"ordinary", "focus"},
+                    expect_event_sources={"progression", "schedule"},
+                    narrative_any=["训练", "舞台", "行程", "专注"],
+                    narrative_none=["危机彻底结束", "完美澄清"],
+                ),
+                JourneyStep(
+                    name="scandal_small_comeback",
+                    action="几周后，公司让我参加小品牌活动作为测试，我保持沉稳和诚恳，慢慢赢回一些理解。",
+                    expect_event_sources={"brand_contract", "fandom"},
+                    narrative_any=["品牌", "测试", "理解", "诚恳"],
+                    narrative_none=["完全翻盘", "彻底洗白"],
+                ),
+                JourneyStep(
+                    name="scandal_trust_rebuilt",
+                    action="经过这段时期的坚持，粉丝开始重新为我应援，品牌方也松口继续合作，媒体不再频繁提旧事。",
+                    expect_event_sources={"public_relations", "fandom"},
+                    expect_state_path_changed={"fans.粉丝信任基础"},
+                    narrative_any=["粉丝", "应援", "信任", "合作"],
+                    narrative_none=["一夕爆红", "全面翻盘"],
+                ),
+            ],
+        ),
+        PlayerJourney(
+            name="award_season_nomination_to_ceremony",
+            description="完整颁奖季旅程：年末积分→提名官宣→典礼现场→结果揭晓。",
+            character=base_character(name="瑞景", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            setup=setup_award_season_run,
+            steps=[
+                JourneyStep(
+                    name="award_nomination_announcement",
+                    action="年末颁奖季，公司让我看年度积分排名——音源、销量、评委和粉丝投票的综合分数。我获得本赏提名。",
+                    expect_route_kinds={"focus"},
+                    expect_event_sources={"market_score"},
+                    expect_event_code_fragments=["award", "market"],
+                    expect_state_path_changed={"market_scores.年度奖项积分"},
+                    narrative_any=["提名", "颁奖", "音源", "销量", "投票"],
+                    narrative_none=["获得大赏"],
+                ),
+                JourneyStep(
+                    name="award_preparation_ritual",
+                    action="典礼前和造型师确认礼服，和队友彩排表演曲目，红毯前深呼吸，手机里收到前辈的加油语音。",
+                    expect_route_kinds={"focus", "ordinary"},
+                    expect_event_sources={"schedule"},
+                    narrative_any=["礼服", "彩排", "红毯", "加油"],
+                ),
+                JourneyStep(
+                    name="award_ceremony_result",
+                    action="典礼之夜闪光灯如白昼，主持人念出候补名单，我看着大屏幕等待结果——不管怎样，这一年的努力被看见了。",
+                    expect_route_kinds={"focus", "mainline"},
+                    expect_event_sources={"market_score"},
+                    expect_event_code_fragments=["award", "market"],
+                    narrative_any=["典礼", "闪光灯", "候补", "结果"],
+                    narrative_none=["获得大赏", "正式获得一位"],
+                ),
+            ],
+        ),
+        PlayerJourney(
+            name="full_career_arc_trainee_to_idol",
+            description="完整职业弧线：从素人新手到出道候选确认，测试各阶段连续推进的完整性。",
+            character=base_character(name="海彬", age=18, company_size="中型公司"),
+            setup=setup_full_career_arc_start,
+            steps=[
+                JourneyStep(
+                    name="first_day_company_observation",
+                    action="第一天进入公司，我在走廊观察练习室氛围，看别人训练，感受公司的节奏。",
+                    expect_route_kinds={"ordinary"},
+                    expect_event_sources={"trainee_life"},
+                    narrative_any=["走廊", "练习室", "观察", "公司", "第一天"],
+                ),
+                JourneyStep(
+                    name="first_week_basic_training_rhythm",
+                    action="第一周基础训练：舞蹈课学基本功、声乐课练气息、体能课跑操，晚上在宿舍整理东西。",
+                    expect_route_kinds={"ordinary"},
+                    expect_event_sources={"progression", "trainee_life"},
+                    expect_state_path_changed={"progression.skill_xp.dance", "progression.skill_xp.vocal"},
+                    narrative_any=["舞蹈课", "声乐课", "体能", "宿舍", "基础"],
+                ),
+                JourneyStep(
+                    name="getting_to_know_peers",
+                    action="课间休息时我主动和同期练习生打招呼，问她叫什么名字，要不要一起去食堂吃饭。",
+                    expect_event_sources={"relationship"},
+                    expect_relationships={"练习生"},
+                    narrative_any=["同期", "打招呼", "食堂", "名字"],
+                ),
+                JourneyStep(
+                    name="weekly_plan_training_mode",
+                    action="我按照本周安排稳定推进基础训练，不求快但求稳。\n\n【本周安排】本周七格安排：固定4格（舞蹈课、声乐课、体能课、形象/语言/团队课）；自选3/3格（舞蹈加练、声乐加练、创作demo）。 具体自选：自选安排舞蹈加练；自选安排声乐加练；自选安排作词作曲训练和demo创作。",
+                    expect_route_kinds={"ordinary", "focus"},
+                    expect_turn_duration_days=7,
+                    expect_prompt_weekly_contract=True,
+                    expect_state_path_changed={"progression.skill_xp.dance", "progression.skill_xp.vocal", "progression.skill_xp.creative"},
+                    narrative_any=["本周安排", "舞蹈", "声乐", "demo"],
+                ),
+                JourneyStep(
+                    name="overcome_struggle_with_mentor",
+                    action="舞蹈老师一对一指导我月末考核的难点动作，指出我核心力量不足，让我加练平板支撑。",
+                    expect_route_kinds={"focus"},
+                    expect_event_sources={"progression"},
+                    expect_state_path_changed={"progression.skill_xp.dance"},
+                    narrative_any=["舞蹈老师", "一对一", "核心", "指导", "考核"],
+                ),
+                JourneyStep(
+                    name="monthly_evaluation_mid_training",
+                    action="月末考核前我手心出汗腿发抖，但坚持完成了舞蹈和声乐考核段，老师微微点了点头。",
+                    expect_route_kinds={"focus"},
+                    expect_event_sources={"time", "company"},
+                    expect_state_path_changed={"company.公司满意度"},
+                    narrative_any=["月末考核", "老师", "考核", "紧张"],
+                ),
+            ],
+        ),
+        PlayerJourney(
+            name="large_company_elite_competition",
+            description="大公司精英路线：高竞争、高资源、高关注环境下的练习生成长路径。",
+            character=base_character(name="瑞景", age=17, company_size="大型公司"),
+            setup=setup_large_company_trainee_elite,
+            steps=[
+                JourneyStep(
+                    name="enter_large_company_with_talent",
+                    action="进入大型公司后第一天就被要求和同期一起公开播放舞蹈录像，压力和期待压在一起。",
+                    expect_route_kinds={"ordinary", "focus"},
+                    expect_event_sources={"company", "trainee_life"},
+                    narrative_any=["公司", "录像", "同期", "舞蹈", "公开"],
+                ),
+                JourneyStep(
+                    name="data_ranking_and_resource_competition",
+                    action="公司在走廊公布了练习生月度数据排名，我看自己的舞蹈评分被列入中上，立刻被卷入资源竞争。",
+                    expect_route_kinds={"focus"},
+                    expect_event_sources={"company"},
+                    expect_event_code_fragments=["company"],
+                    expect_state_path_changed={"team.队内竞争度"},
+                    narrative_any=["排名", "资源", "竞争", "数据", "走廊"],
+                ),
+                JourneyStep(
+                    name="large_company_training_and_competition",
+                    action="大型公司的一对一课程很难抢，我凌晨五点起来排队拿舞蹈房的预约纸条。",
+                    expect_route_kinds={"ordinary", "focus"},
+                    expect_event_sources={"progression", "trainee_life"},
+                    narrative_any=["排队", "舞蹈房", "预约", "凌晨"],
+                ),
+                JourneyStep(
+                    name="rivalry_with_peer_in_large_company",
+                    action="同期练习生姜瑞允这次考核排名比我高一名，她在走廊里对我笑了笑，但我很在意那个排名。",
+                    expect_event_sources={"relationship"},
+                    expect_relationships={"姜瑞允"},
+                    narrative_any=["姜瑞允", "排名", "考核", "竞争", "走廊"],
+                ),
+            ],
+        ),
+        PlayerJourney(
+            name="multi_crisis_management_journey",
+            description="多危机并发处理：在舆论、健康、心理三重压力下逐步走出的路径。",
+            character=base_character(name="夏景", timeline="回归瓶颈期", company_size="大型公司", identity="已出道女团成员"),
+            setup=setup_multi_crisis_journey,
+            steps=[
+                JourneyStep(
+                    name="pr_crisis_first_response_with_company",
+                    action="旧采访片段被恶意剪辑上传，公司紧急召开发布会前会议，要求我按稿回应不得自由发挥。",
+                    expect_route_kinds={"crisis"},
+                    expect_event_sources={"public_relations"},
+                    expect_event_code_fragments=["crisis"],
+                    narrative_any=["发布会", "剪辑", "回应", "公司", "稿"],
+                ),
+                JourneyStep(
+                    name="lay_low_but_keep_training",
+                    action="我没有公开回应而是安静训练、改进舞台表现，不想让黑粉找到新素材。",
+                    expect_route_kinds={"ordinary", "focus"},
+                    expect_event_sources={"progression", "schedule"},
+                    narrative_any=["训练", "安静", "舞台", "黑粉", "素材"],
+                ),
+                JourneyStep(
+                    name="small_recovery_step_fan_interaction",
+                    action="风波慢慢变小时我恢复了一些简单粉丝互动，在签售会里认真听了一位老粉的信。",
+                    expect_event_sources={"fandom", "schedule"},
+                    narrative_any=["粉丝", "信", "签售", "恢复", "认真"],
+                    narrative_none=["彻底翻盘"],
+                ),
+            ],
+        ),
+        PlayerJourney(
+            name="period_aware_training_and_health_journey",
+            description="生理期系统的完整测试：从经前期到恢复期的各阶段叙事。",
+            character=base_character(name="多惠", age=19, company_size="中型公司"),
+            setup=setup_period_aware_journey,
+            steps=[
+                JourneyStep(
+                    name="pms_awareness_training_modification",
+                    action="经前期我感觉身体肿胀、情绪容易波动，跟老师说今天降低训练强度，自己拉伸就好。",
+                    expect_event_sources={"period"},
+                    expect_state_paths={"period.mode": "极致"},
+                    narrative_any=["经前期", "降低", "拉伸", "身体", "老师"],
+                ),
+                JourneyStep(
+                    name="period_tell_teammate_get_support",
+                    action="生理期前段腹部坠痛，我忍不住跟室友说我需要止痛药问有没有暖宝宝。",
+                    expect_event_sources={"period"},
+                    expect_event_code_fragments=["period"],
+                    narrative_any=["生理期", "室友", "止痛", "暖宝宝", "痛"],
+                ),
+                JourneyStep(
+                    name="recovery_phase_gradually_resume",
+                    action="恢复期体力慢慢回来了，我重新开始正常训练，但注意不让自己再次过度疲劳。",
+                    expect_event_sources={"period", "progression"},
+                    narrative_any=["恢复期", "体力", "正常训练", "注意"],
+                ),
+            ],
+        ),
+        PlayerJourney(
+            name="bullying_protection_redemption",
+            description="排挤和保护系统的完整叙事：从被冷处理到站出来保护他人。",
+            character=base_character(name="敏知", age=17, company_size="小型公司"),
+            setup=setup_bullying_and_protection_arc,
+            steps=[
+                JourneyStep(
+                    name="cold_shoulder_isolation_experience",
+                    action="宿舍里没有人跟我说话，分组练习时剩下的两个人自动一组根本不看我，我只能一个人对着墙练。",
+                    expect_event_sources={"trainee_life"},
+                    expect_event_code_fragments=["bullying", "cold"],
+                    narrative_any=["宿舍", "没有人", "分组", "墙"],
+                ),
+                JourneyStep(
+                    name="protect_younger_victim",
+                    action="我看到新来的小练习生被抢走练习室时间段在后面哭，我走过去陪她找老师和经纪人。",
+                    expect_event_sources={"trainee_life", "relationship"},
+                    expect_event_code_fragments=["trainee_protected", "help"],
+                    narrative_any=["练习生", "老师", "经纪人", "哭", "陪"],
+                ),
+                JourneyStep(
+                    name="seek_formal_help_break_silence",
+                    action="我决定不再沉默，把近期发生的排挤细节整理成书面记录交给可信的舞蹈老师。",
+                    expect_event_sources={"trainee_life"},
+                    expect_event_code_fragments=["help_seeking", "conflict"],
+                    narrative_any=["记录", "舞蹈老师", "书面", "可信"],
                 ),
             ],
         ),
