@@ -209,6 +209,19 @@ class EventDefinition:
             raise ValueError(
                 f"INTERRUPTIVE event {self.event_id} 不允许携带顶层 effects（机械后果必须属于 Choice.effects）。"
             )
+        # director_brief 仅在 LLM_ASSISTED（Event Director 语义判断）或 INTERRUPTIVE
+        # （Event Scene 复用为 canonical setup brief）时必填，且必须 strip 非空。
+        requires_brief = (
+            self.trigger_mode == EventTriggerMode.LLM_ASSISTED
+            or self.interaction_mode == EventInteractionMode.INTERRUPTIVE
+        )
+        if requires_brief and (not self.director_brief or not str(self.director_brief).strip()):
+            raise ValueError(f"event {self.event_id} 必须拥有非空 director_brief（strip 后）。")
+        for choice in self.choices:
+            if not choice.choice_id or not str(choice.choice_id).strip():
+                raise ValueError(f"event {self.event_id} 的 choice_id 必须非空。")
+            if not choice.director_brief or not str(choice.director_brief).strip():
+                raise ValueError(f"event {self.event_id} 的 choice director_brief 必须非空。")
         validate_event_actions(self.effects)
         for choice in self.choices:
             validate_event_actions(choice.effects)
@@ -343,11 +356,25 @@ def _validate_soft_judgment(
     llm_candidates: Tuple[EventDefinition, ...],
     soft_judgment: EventSoftJudgment,
 ) -> None:
-    """LLM 不能创造 Event ID：scores 只能包含 eligible LLM_ASSISTED 候选。"""
+    """LLM 不能创造 Event ID；Core 同时防御语义非法 judgment（不信任 Orchestration）。
+
+    - scores 只能包含 eligible LLM_ASSISTED 候选；
+    - should_trigger_any=False → scores 必须为空；
+    - should_trigger_any=True → 必须恰好一条 score（零或一个事件，禁止多选）；
+    - relevance 0..1 由 Pydantic schema 保证。
+    """
     allowed = {d.event_id for d in llm_candidates}
     unknown = [s.event_id for s in soft_judgment.scores if s.event_id not in allowed]
     if unknown:
         raise ValueError(f"EventSoftJudgment 包含未知 event_id（不允许 LLM 创造事件）：{unknown}")
+    if not soft_judgment.should_trigger_any:
+        if soft_judgment.scores:
+            raise ValueError("should_trigger_any=False 但 scores 非空（Core 拒绝语义非法 judgment）。")
+        return
+    if len(soft_judgment.scores) != 1:
+        raise ValueError(
+            f"should_trigger_any=True 必须恰好一个候选 score（当前 {len(soft_judgment.scores)}，禁止多事件）。"
+        )
 
 
 def _llm_effective_probability(base_probability: float, relevance: float) -> float:

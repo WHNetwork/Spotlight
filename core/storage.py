@@ -157,9 +157,13 @@ class SaveStorage:
             return save_id
 
     def update_save(self, save_id: int, state: GameState) -> None:
+        if state.meta.save_id > 0 and state.meta.save_id != save_id:
+            raise ValueError(f"state.meta.save_id（{state.meta.save_id}）与 save_id（{save_id}）不一致。")
         now = datetime.now().isoformat(timespec="seconds")
         with self.connect() as conn:
-            conn.execute("UPDATE saves SET name=?, updated_at=?, state_json=? WHERE id=?", (state.save_name, now, state.model_dump_json(), save_id))
+            cur = conn.execute("UPDATE saves SET name=?, updated_at=?, state_json=? WHERE id=?", (state.save_name, now, state.model_dump_json(), save_id))
+            if cur.rowcount != 1:
+                raise ValueError(f"存档不存在：{save_id}。")
             conn.commit()
 
     def load_save(self, save_id: int) -> GameState:
@@ -204,11 +208,18 @@ class SaveStorage:
             raise ValueError("SlotResolutionResult.completed 必须为 True 才能持久化。")
         if not new_state.day.slots:
             raise ValueError("DayState 尚未初始化，无法保存 Slot checkpoint。")
+        if not (0 <= result.slot_index <= 7):
+            raise ValueError(f"Slot index {result.slot_index} 必须在 0..7 内。")
         if not (0 <= result.slot_index < len(new_state.day.slots)):
             raise ValueError(f"Slot index {result.slot_index} 超出当天范围。")
         slot = new_state.day.slots[result.slot_index]
         if slot.status != SlotStatus.COMPLETED:
             raise ValueError(f"Slot {result.slot_index} 尚未 COMPLETED，checkpoint 与 result 不一致。")
+        completed_indices = [s.index for s in new_state.day.slots if s.status == SlotStatus.COMPLETED]
+        if completed_indices != list(range(result.slot_index + 1)):
+            raise ValueError(
+                f"Slot 完成必须是从 0 到 {result.slot_index} 的连续前缀（当前 {completed_indices}）。"
+            )
         if slot.kind != result.slot_kind:
             raise ValueError(f"Slot {result.slot_index} 的 kind（{slot.kind.value}）与 result（{result.slot_kind.value}）不一致。")
         if slot.kind == SlotKind.COMPANY and slot.company_course != result.company_course:
@@ -250,6 +261,18 @@ class SaveStorage:
                 )
                 if cur.rowcount != 1:
                     raise ValueError(f"存档不存在：{save_id}，无法保存 checkpoint。")
+                existing = [
+                    int(r["slot_index"])
+                    for r in conn.execute(
+                        "SELECT slot_index FROM slot_resolution_history WHERE save_id=? AND game_date=? ORDER BY slot_index ASC",
+                        (save_id, game_date),
+                    ).fetchall()
+                ]
+                if existing != list(range(result.slot_index)):
+                    raise ValueError(
+                        f"slot_resolution_history 已有记录必须严格为 0..{result.slot_index - 1} 连续前缀"
+                        f"（当前 {existing}），不能跳写/回写。"
+                    )
                 conn.execute(
                     "INSERT INTO slot_resolution_history (save_id, game_date, slot_index, result_json, created_at) VALUES (?, ?, ?, ?, ?)",
                     (save_id, game_date, result.slot_index, result_json, now),
@@ -297,10 +320,11 @@ class SaveStorage:
         """玩家解决 PendingEvent 后原子保存：验证 PendingEvent → UPDATE GameState → INSERT EventResult。
 
         同一 SQLite transaction：
-        ① 读取数据库当前存档的 GameState，确认其 pending_event 存在且
-           event_instance_id 与 event_result 一致（防止错配写入）；
-        ② UPDATE GameState（pending_event 已清除）；
-        ③ INSERT event_history；
+        ① 读取数据库当前存档的 GameState，确认 pending_event 存在且其全部机械字段
+           与 event_result 完全一致（防止错配写入）；
+        ② 校验 event_result.choice_id 非空且属于 pending.available_choice_ids；
+        ③ new_state.pending_event 必须已清除、日期等于 event_result.game_date；
+        ④ UPDATE GameState；⑤ INSERT event_history。
         COMMIT / 任一步失败 ROLLBACK。
         """
         save_id = new_state.meta.save_id
@@ -318,10 +342,43 @@ class SaveStorage:
                 persisted = GameState.model_validate_json(row["state_json"])
                 if persisted.pending_event is None:
                     raise ValueError("数据库当前存档没有 PendingEvent，不能写入 EventResult。")
-                if persisted.pending_event.event_instance_id != event_result.event_instance_id:
-                    raise ValueError(
-                        f"EventResult.event_instance_id 与数据库中的 PendingEvent 不一致：{event_result.event_instance_id}"
-                    )
+                pending = persisted.pending_event
+                er = event_result
+                mismatches = []
+                if pending.event_instance_id != er.event_instance_id:
+                    mismatches.append("event_instance_id")
+                if pending.event_id != er.event_id:
+                    mismatches.append("event_id")
+                if pending.triggered_date != er.game_date:
+                    mismatches.append("game_date/triggered_date")
+                if pending.trigger_slot_index != er.trigger_slot_index:
+                    mismatches.append("trigger_slot_index")
+                if pending.category != er.category:
+                    mismatches.append("category")
+                if pending.trigger_mode != er.trigger_mode:
+                    mismatches.append("trigger_mode")
+                if pending.tier != er.tier:
+                    mismatches.append("tier")
+                if pending.interaction_mode != er.interaction_mode:
+                    mismatches.append("interaction_mode")
+                if pending.priority != er.priority:
+                    mismatches.append("priority")
+                if pending.base_probability != er.base_probability:
+                    mismatches.append("base_probability")
+                if pending.soft_relevance != er.soft_relevance:
+                    mismatches.append("soft_relevance")
+                if pending.effective_probability != er.effective_probability:
+                    mismatches.append("effective_probability")
+                if pending.context_npc_id != er.context_npc_id:
+                    mismatches.append("context_npc_id")
+                if not er.choice_id or er.choice_id not in pending.available_choice_ids:
+                    mismatches.append("choice_id 不在 available_choice_ids")
+                if new_state.pending_event is not None:
+                    mismatches.append("new_state.pending_event 未清除")
+                if new_state.time.current_date != er.game_date:
+                    mismatches.append("日期推进（Event Choice 不推进日期）")
+                if mismatches:
+                    raise ValueError(f"Event resolution 与 PendingEvent 不一致：{', '.join(mismatches)}")
                 cur = conn.execute(
                     "UPDATE saves SET name=?, updated_at=?, state_json=? WHERE id=?",
                     (new_state.save_name, now, new_state.model_dump_json(), save_id),
@@ -666,6 +723,36 @@ class SaveStorage:
                     raise ValueError("new_state.current_date 必须等于 result.next_date。")
                 if new_state.pending_event is not None:
                     raise ValueError("new_state 不应携带 PendingEvent（Day Settlement 后必须无待处理事件）。")
+
+                # 应评必评：persisted 旧日若满足月评资格，则 result 必须携带月评；反之不得凭空携带。
+                from core.evaluation import is_monthly_evaluation_eligible
+
+                evaluation_eligible = is_monthly_evaluation_eligible(persisted)
+                if evaluation_eligible and result.monthly_evaluation is None:
+                    raise ValueError("当前旧日满足正式月评资格，但 result 未携带 monthly_evaluation（禁止伪造跳过）。")
+                if not evaluation_eligible and result.monthly_evaluation is not None:
+                    raise ValueError("当前旧日不满足月评资格，但 result 凭空携带了 monthly_evaluation。")
+
+                # 最低一致性：result.condition_result.before 必须等于 persisted 当天结束 Condition 快照。
+                from core.condition_resolution import snapshot_of
+
+                persisted_condition = snapshot_of(persisted.condition)
+                before_snapshot = result.condition_result.before
+                for field in ("energy", "voice_condition", "sleep_condition", "mood", "confidence",
+                              "muscle_fatigue", "injury_risk", "stress"):
+                    if abs(getattr(before_snapshot, field) - getattr(persisted_condition, field)) > 1e-9:
+                        raise ValueError(f"result.condition_result.before.{field} 与 persisted 当天结束 Condition 不一致。")
+
+                # form_results 必须覆盖正式 8 个 Skill（顺序与 Core contract 一致）。
+                from core.models import SkillId
+
+                expected_form_order = [
+                    SkillId.DANCE, SkillId.VOCAL, SkillId.RAP, SkillId.STAGE,
+                    SkillId.CAMERA, SkillId.LANGUAGE, SkillId.ACTING, SkillId.CREATION,
+                ]
+                actual_form_order = [fr.skill for fr in result.form_results]
+                if actual_form_order != expected_form_order:
+                    raise ValueError("result.form_results 必须按正式 8 Skill 顺序完整覆盖（Core contract）。")
 
                 if result.monthly_evaluation is not None:
                     evaluation = result.monthly_evaluation

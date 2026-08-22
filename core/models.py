@@ -3,7 +3,7 @@ from __future__ import annotations
 import calendar
 from datetime import date, timedelta
 from enum import Enum
-from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -127,6 +127,12 @@ class TimeState(BaseModel):
     created_date: date = Field(default_factory=date.today)
     current_date: date = Field(default_factory=lambda: date.today() + timedelta(days=1))
 
+    @model_validator(mode="after")
+    def _validate_date_order(self) -> "TimeState":
+        if self.current_date < self.created_date:
+            raise ValueError("current_date 不能早于 created_date（游戏时间只能前进）。")
+        return self
+
     @property
     def trainee_day(self) -> int:
         """练习生第几天 = 入社日期到当前日期的天数（建档/入社当天 = 0，次日 = 1）。
@@ -234,19 +240,31 @@ class SkillState(BaseModel):
     """单个技能状态。
 
     value：长期真实能力（0–100，locked 技能为 None）；
-    xp：当前 Skill Level 向下一级成长的隐藏进度（float）；
+    xp：当前 Skill Level 向下一级成长的隐藏进度（float，非负）；
     form：近期手感 / 当前熟练状态（0–100，float，允许趋近式增长产生小数）；
     talent：隐藏学习天赋（0–100，只影响学习效率，不决定技能上限）；
     unlocked：是否已被正式发现 / 解锁；
     last_practiced_date：上次正式训练日期。
+
+    一致性：unlocked → value/form 必须存在；locked → value/form 必须为 None。
     """
 
-    value: Optional[int] = None
-    xp: float = 0.0
-    form: Optional[float] = None
-    talent: int = 50
+    value: Optional[int] = Field(default=None, ge=0, le=100)
+    xp: float = Field(default=0.0, ge=0)
+    form: Optional[float] = Field(default=None, ge=0, le=100)
+    talent: int = Field(default=50, ge=0, le=100)
     unlocked: bool = False
     last_practiced_date: Optional[date] = None
+
+    @model_validator(mode="after")
+    def _validate_locked_consistency(self) -> "SkillState":
+        if self.unlocked:
+            if self.value is None or self.form is None:
+                raise ValueError("unlocked skill 的 value / form 必须存在。")
+        else:
+            if self.value is not None or self.form is not None:
+                raise ValueError("locked skill 的 value / form 必须为 None。")
+        return self
 
 
 class TraitState(BaseModel):
@@ -749,7 +767,7 @@ class RelationshipActionTarget(str, Enum):
 
 
 class RelationshipEventAction(BaseModel):
-    kind: EventActionKind = EventActionKind.RELATIONSHIP
+    kind: Literal[EventActionKind.RELATIONSHIP] = EventActionKind.RELATIONSHIP
     target: RelationshipActionTarget
     signal: RelationshipSignal
     npc_id: Optional[str] = None
@@ -766,7 +784,7 @@ class RelationshipEventAction(BaseModel):
 
 
 class ConditionEventAction(BaseModel):
-    kind: EventActionKind = EventActionKind.CONDITION
+    kind: Literal[EventActionKind.CONDITION] = EventActionKind.CONDITION
     signal: ConditionSignal
 
 
@@ -782,12 +800,12 @@ class EventEffectKind(str, Enum):
 
 
 class AppliedRelationshipEffect(BaseModel):
-    kind: EventEffectKind = EventEffectKind.RELATIONSHIP
+    kind: Literal[EventEffectKind.RELATIONSHIP] = EventEffectKind.RELATIONSHIP
     result: RelationshipDevelopmentResult
 
 
 class AppliedConditionEffect(BaseModel):
-    kind: EventEffectKind = EventEffectKind.CONDITION
+    kind: Literal[EventEffectKind.CONDITION] = EventEffectKind.CONDITION
     result: ConditionSignalResult
 
 
@@ -806,15 +824,15 @@ class PendingEventState(BaseModel):
     event_instance_id: str
     event_id: str
     triggered_date: date
-    trigger_slot_index: int
+    trigger_slot_index: int = Field(ge=0, le=7)
     category: EventCategory
     trigger_mode: EventTriggerMode
     tier: EventTier
     interaction_mode: EventInteractionMode
     priority: int
-    base_probability: float
-    soft_relevance: Optional[float] = None
-    effective_probability: float
+    base_probability: float = Field(ge=0, le=1)
+    soft_relevance: Optional[float] = Field(default=None, ge=0, le=1)
+    effective_probability: float = Field(ge=0, le=1)
     available_choice_ids: Tuple[str, ...] = ()
     context_npc_id: Optional[str] = None
 
@@ -835,15 +853,15 @@ class EventResult(BaseModel):
     event_instance_id: str
     event_id: str
     game_date: date
-    trigger_slot_index: int
+    trigger_slot_index: int = Field(ge=0, le=7)
     category: EventCategory
     trigger_mode: EventTriggerMode
     tier: EventTier
     interaction_mode: EventInteractionMode
     priority: int
-    base_probability: float
-    soft_relevance: Optional[float] = None
-    effective_probability: float
+    base_probability: float = Field(ge=0, le=1)
+    soft_relevance: Optional[float] = Field(default=None, ge=0, le=1)
+    effective_probability: float = Field(ge=0, le=1)
     choice_id: Optional[str] = None
     context_npc_id: Optional[str] = None
     applied_effects: List[EventAppliedEffect] = Field(default_factory=list)
@@ -1110,6 +1128,13 @@ class DayState(BaseModel):
         expected = [0, 1, 2, 3, 4, 5, 6, 7]
         if actual != expected:
             raise ValueError(f"DayState 的 Slot index 必须严格按 0..7 顺序且不重复不缺失（当前 {actual}）。")
+        completed_prefix = True
+        for slot in self.slots:
+            if slot.status == SlotStatus.COMPLETED:
+                if not completed_prefix:
+                    raise ValueError("COMPLETED Slot 必须形成从 index 0 开始的连续前缀（不允许空洞）。")
+            else:
+                completed_prefix = False
         return self
 
     @property

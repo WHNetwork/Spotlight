@@ -150,6 +150,8 @@ class AppConfig:
             flash_model = self.mimo_flash_model
             pro_model = self.mimo_pro_model
             custom_model = self.mimo_custom_model
+        elif self.provider == "glm":
+            return self.glm_model
         else:
             flash_model = self.flash_model
             pro_model = self.pro_model

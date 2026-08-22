@@ -13,6 +13,21 @@ class LLMError(RuntimeError):
     pass
 
 
+def _extract_assistant_content(data: dict, provider_name: str) -> str:
+    """统一提取 assistant content；三家 Provider 完全一致。
+
+    content 必须为非空 str（strip 后非空），否则明确抛 LLMError；
+    正常返回 content.strip()。不做任何 fallback / 占位 / 文学后处理。
+    """
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except Exception as exc:
+        raise LLMError(f"{provider_name} 返回格式异常：{data}") from exc
+    if not isinstance(content, str) or not content.strip():
+        raise LLMError(f"{provider_name} 返回空 assistant content。")
+    return content.strip()
+
+
 class BaseProvider:
     def generate(self, messages: List[Dict[str, str]], model: str | None = None, json_mode: bool = True) -> str:
         raise NotImplementedError
@@ -52,13 +67,10 @@ class DeepSeekProvider(BaseProvider):
         except Exception as exc:
             raise LLMError(f"{provider_name} 调用失败：{exc}") from exc
 
-        try:
-            content = data["choices"][0]["message"]["content"]
-            preview = str(content).replace("\n", " ")[:260]
-            logger.info(f"{provider_name} returned content: chars={len(str(content))}, preview={preview}")
-            return content
-        except Exception as exc:
-            raise LLMError(f"{provider_name} 返回格式异常：{data}") from exc
+        content = _extract_assistant_content(data, provider_name)
+        preview = content.replace("\n", " ")[:260]
+        logger.info(f"{provider_name} returned content: chars={len(content)}, preview={preview}")
+        return content
 
 
 class XiaomiMiMoProvider(BaseProvider):
@@ -99,13 +111,10 @@ class XiaomiMiMoProvider(BaseProvider):
         except Exception as exc:
             raise LLMError(f"Xiaomi MiMo 调用失败：{exc}") from exc
 
-        try:
-            content = data["choices"][0]["message"]["content"]
-            preview = str(content).replace("\n", " ")[:260]
-            logger.info(f"Xiaomi MiMo returned content: chars={len(str(content))}, preview={preview}")
-            return content
-        except Exception as exc:
-            raise LLMError(f"Xiaomi MiMo 返回格式异常：{data}") from exc
+        content = _extract_assistant_content(data, "Xiaomi MiMo")
+        preview = content.replace("\n", " ")[:260]
+        logger.info(f"Xiaomi MiMo returned content: chars={len(content)}, preview={preview}")
+        return content
 
 
 class GLMProvider(BaseProvider):
@@ -147,13 +156,10 @@ class GLMProvider(BaseProvider):
         except Exception as exc:
             raise LLMError(f"GLM 调用失败：{exc}") from exc
 
-        try:
-            content = data["choices"][0]["message"]["content"]
-            preview = str(content).replace("\n", " ")[:260]
-            logger.info(f"GLM returned content: chars={len(str(content))}, preview={preview}")
-            return content
-        except Exception as exc:
-            raise LLMError(f"GLM 返回格式异常：{data}") from exc
+        content = _extract_assistant_content(data, "GLM")
+        preview = content.replace("\n", " ")[:260]
+        logger.info(f"GLM returned content: chars={len(content)}, preview={preview}")
+        return content
 
 
 def get_llm_provider(config: AppConfig, provider_name: str | None = None) -> BaseProvider:

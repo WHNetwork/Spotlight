@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import re
 import secrets
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from core.models import (
     CompanySize,
@@ -100,10 +100,11 @@ def clamp(v: int, low: int = 0, high: int = 100) -> int:
     return max(low, min(high, int(v)))
 
 
-def mbti_letters(character: Dict[str, Any]) -> tuple[str, str, str, str, str]:
+def mbti_letters(character: Dict[str, Any]) -> Optional[Tuple[str, str, str, str, str]]:
+    """合法 MBTI 才返回四字母分解；未提供/非法格式返回 None（绝不伪造 INFP）。"""
     code = str(character.get("MBTI") or "").upper().strip()
     if not re.match(r"^[IE][NS][TF][JP]$", code):
-        code = "INFP"
+        return None
     return code, code[0], code[1], code[2], code[3]
 
 
@@ -127,8 +128,10 @@ def parse_profile_tags(character: Dict[str, Any]) -> List[str]:
     weakness = str(character.get("弱项", ""))
     exp = str(character.get("练习生经历", ""))
     family = str(character.get("家庭状况", ""))
-    mbti_code, mbti_e, mbti_p, mbti_j, mbti_l = mbti_letters(character)
-    tags.extend([f"MBTI:{mbti_code}", f"MBTI-{mbti_e}", f"MBTI-{mbti_p}", f"MBTI-{mbti_j}", f"MBTI-{mbti_l}"])
+    mbti_letters_result = mbti_letters(character)
+    if mbti_letters_result is not None:
+        mbti_code, mbti_e, mbti_p, mbti_j, mbti_l = mbti_letters_result
+        tags.extend([f"MBTI:{mbti_code}", f"MBTI-{mbti_e}", f"MBTI-{mbti_p}", f"MBTI-{mbti_j}", f"MBTI-{mbti_l}"])
 
     if "运动员" in identity or any("运动员" in str(t) for t in source_tags):
         tags.append("前运动员")
@@ -205,7 +208,7 @@ def apply_company_profile(state: GameState, character: Dict[str, Any], log: List
     state.company.management_style = profile.management_style
     state.company.training_intensity = profile.training_intensity
     state.company.resource_level = profile.resource_level
-    state.company.training_weights = TRAINING_WEIGHTS_BY_STYLE[profile.training_style]
+    state.company.training_weights = TRAINING_WEIGHTS_BY_STYLE[profile.training_style].model_copy(deep=True)
     log.append(
         f"公司画像：规模 {size.value}，培养风格 {profile.training_style.value}，"
         f"管理风格 {profile.management_style.value}，训练强度 {profile.training_intensity}，"
@@ -390,7 +393,7 @@ def apply_player_initial(state: GameState, character: Dict[str, Any], tags: List
 
 
 def allocate_initial_state(state: GameState, character: Dict[str, Any]) -> List[str]:
-    """根据角色创建数据构造新的权威 GameState。
+    """根据角色创建数据构造新的权威 GameState（failure-atomic）。
 
     只迁移：人物稳定事实、常规技能初始值、隐藏天赋、身体心理初始状态、
     公司基本事实、练习生入社第一天的身份、Company Local Roster（NPC 人物圈）。
@@ -402,34 +405,45 @@ def allocate_initial_state(state: GameState, character: Dict[str, Any]) -> List[
     本函数是“新建存档”的正式入口：只在这里随机生成一次世界根随机种子
     （MetaState.rng_seed），随后保存进存档；读档时直接恢复存档里的值，
     绝不根据角色资料、日期或 save_id 重新计算。
+
+    原子性：所有初始化在 deep copy 上完成，全部成功后才一次性提交回输入
+    state；任何异常时输入 state 保持完全不变。
     """
+    working = state.model_copy(deep=True)
+
     log: List[str] = []
     timeline = str(character.get("时间线", "练习生阶段"))
     if timeline != "练习生阶段":
         log.append(f"时间线「{timeline}」暂按练习生阶段初始化；出道后内容将在后续版本重新设计。")
 
     tags = parse_profile_tags(character)
-    state.meta.rng_seed = secrets.randbits(64)
-    log.append(f"meta.rng_seed = {state.meta.rng_seed}（新建存档时随机生成一次，与角色资料无关）")
+    working.meta.rng_seed = secrets.randbits(64)
+    log.append(f"meta.rng_seed = {working.meta.rng_seed}（新建存档时随机生成一次，与角色资料无关）")
 
-    apply_player_initial(state, character, tags, log)
-    apply_company_profile(state, character, log)
-    apply_skill_initial(state, character, tags, log)
-    apply_condition_initial(state, tags, log)
-    apply_trainee_initial(state, log)
+    apply_player_initial(working, character, tags, log)
+    apply_company_profile(working, character, log)
+    apply_skill_initial(working, character, tags, log)
+    apply_condition_initial(working, tags, log)
+    apply_trainee_initial(working, log)
 
     # Menstrual Cycle bootstrap + 第一可玩日生理影响（作用于 time.current_date，非 created_date）。
-    initialize_menstrual_cycle(state)
+    initialize_menstrual_cycle(working)
     apply_daily_menstrual_physiology(
-        state.menstrual_cycle, state.condition, state.time.current_date, state.meta.rng_seed
+        working.menstrual_cycle, working.condition, working.time.current_date, working.meta.rng_seed
     )
     log.append("menstrual_cycle 已初始化并应用第一可玩日生理影响（每天仅应用一次）。")
 
     # Company Profile 完成后生成 Company Local Roster（一次性 world bootstrap）。
-    initialize_npc_roster(state)
-    state.day = type(state.day)()
+    initialize_npc_roster(working)
+    working.day = type(working.day)()
     log.append(
-        f"NPC Local Roster 已初始化：{len(state.npcs)} 人"
-        f"（trainee/teacher/manager/staff 按 CompanySize={state.company.size.value} 确定，关系均为陌生人初始值）。"
+        f"NPC Local Roster 已初始化：{len(working.npcs)} 人"
+        f"（trainee/teacher/manager/staff 按 CompanySize={working.company.size.value} 确定，关系均为陌生人初始值）。"
     )
+
+    # 提交：全部成功后先对 working_state 做一次完整 model revalidation
+    #（防止 helper 经 assignment 写入非法值绕过 validator），再一次性写回输入 state。
+    GameState.model_validate(working.model_dump())
+    for field_name in GameState.model_fields:
+        setattr(state, field_name, getattr(working, field_name))
     return log

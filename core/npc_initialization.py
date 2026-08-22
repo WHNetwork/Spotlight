@@ -43,10 +43,25 @@ class NPCInitializationError(ValueError):
     """NPC roster 初始化失败（重复初始化 / 状态非法 / 姓名池不足 / invariant 失败）。"""
 
 
-_ROSTER_RULES: Dict[CompanySize, Dict[str, Tuple[int, int]]] = {
-    CompanySize.SMALL: {"trainee": (4, 6), "teacher": (3, 4), "manager": (1, 1), "staff": (1, 1)},
-    CompanySize.MEDIUM: {"trainee": (6, 9), "teacher": (4, 6), "manager": (1, 1), "staff": (1, 2)},
-    CompanySize.LARGE: {"trainee": (8, 12), "teacher": (5, 7), "manager": (1, 1), "staff": (2, 2)},
+_ROSTER_RULES: Dict[CompanySize, Dict[NPCRole, Tuple[int, int]]] = {
+    CompanySize.SMALL: {
+        NPCRole.TRAINEE: (4, 6),
+        NPCRole.TEACHER: (3, 4),
+        NPCRole.MANAGER: (1, 1),
+        NPCRole.STAFF: (1, 1),
+    },
+    CompanySize.MEDIUM: {
+        NPCRole.TRAINEE: (6, 9),
+        NPCRole.TEACHER: (4, 6),
+        NPCRole.MANAGER: (1, 1),
+        NPCRole.STAFF: (1, 2),
+    },
+    CompanySize.LARGE: {
+        NPCRole.TRAINEE: (8, 12),
+        NPCRole.TEACHER: (5, 7),
+        NPCRole.MANAGER: (1, 1),
+        NPCRole.STAFF: (2, 2),
+    },
 }
 
 # Teacher 基础硬覆盖：无论规模，至少各 1 位。
@@ -104,10 +119,10 @@ def initialize_npc_roster(game_state: GameState) -> None:
     rng = _bootstrap_rng(game_state.meta.rng_seed)
     rules = _ROSTER_RULES[size]
 
-    trainee_count = rng.randint(*rules["trainee"])
-    teacher_count = rng.randint(*rules["teacher"])
-    manager_count = rules["manager"][0]
-    staff_count = rng.randint(*rules["staff"])
+    trainee_count = rng.randint(*rules[NPCRole.TRAINEE])
+    teacher_count = rng.randint(*rules[NPCRole.TEACHER])
+    manager_count = rules[NPCRole.MANAGER][0]
+    staff_count = rng.randint(*rules[NPCRole.STAFF])
 
     counts: Dict[NPCRole, int] = {
         NPCRole.TRAINEE: trainee_count,
@@ -131,7 +146,7 @@ def initialize_npc_roster(game_state: GameState) -> None:
             name=name,
             role=role,
             specialty=specialty,
-            character_facts=build_npc_character_facts(state.meta.rng_seed, npc_id, role),
+            character_facts=build_npc_character_facts(game_state.meta.rng_seed, npc_id, role),
         )
 
     # ---- TRAINEE：Korean 为主，混入少量其他风格 ----
@@ -201,9 +216,9 @@ def _validate_roster(game_state: GameState, size: CompanySize, counts: Dict[NPCR
     rules = _ROSTER_RULES[size]
     checks = []
     for role in (NPCRole.TRAINEE, NPCRole.TEACHER, NPCRole.STAFF):
-        lo, hi = rules[role.value]
+        lo, hi = rules[role]
         checks.append((f"{role.value} count", lo <= role_count(role) <= hi))
-    checks.append(("manager count", role_count(NPCRole.MANAGER) == 1))
+    checks.append(("manager count", role_count(NPCRole.MANAGER) == rules[NPCRole.MANAGER][0]))
     checks.append(("expected totals", role_count(NPCRole.TRAINEE) == counts[NPCRole.TRAINEE]
                    and role_count(NPCRole.TEACHER) == counts[NPCRole.TEACHER]
                    and role_count(NPCRole.MANAGER) == counts[NPCRole.MANAGER]
