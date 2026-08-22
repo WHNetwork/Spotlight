@@ -14,25 +14,31 @@ Daily Narrative 与 Diary 共用的唯一 canonical day fact package：
 from __future__ import annotations
 
 from datetime import date
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Mapping, Optional, Sequence
 
 from pydantic import BaseModel, Field
 
 from core.day_settlement import DaySettlementResult
 from core.condition_resolution import snapshot_of
+from core.event_definition import EventDefinition
 from core.evaluation import MonthlyEvaluationResult
 from core.menstrual_cycle import derive_menstrual_daily_state
 from core.models import (
     AppliedConditionEffect,
     AppliedRelationshipEffect,
     ConditionSnapshot,
+    EventInteractionMode,
     EventResult,
     GameState,
     SlotKind,
     SlotResolutionResult,
 )
 from orchestration.npc_writing_context import build_npc_writing_context
-from orchestration.writing_context_models import NPCWritingContext, band_for
+from orchestration.writing_context_models import (
+    NPCWritingContext,
+    band_for,
+    exploration_stage_for,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -48,15 +54,18 @@ class DailySlotFact(BaseModel):
     free_action_detail: Optional[str] = None
     training_summary: Optional[dict] = None
     social_summary: Optional[dict] = None
+    exploration_summary: Optional[dict] = None
 
 
 class DailyEventFact(BaseModel):
     event_id: str
+    event_brief: str
     category: str
     tier: str
     interaction_mode: str
     context_npc_id: Optional[str] = None
     choice_id: Optional[str] = None
+    choice_brief: Optional[str] = None
     effect_summary: List[str] = Field(default_factory=list)
 
 
@@ -142,6 +151,17 @@ def _social_summary(slot_result: SlotResolutionResult) -> Optional[dict]:
     }
 
 
+def _exploration_summary(slot_result: SlotResolutionResult) -> Optional[dict]:
+    er = slot_result.exploration_result
+    if er is None:
+        return None
+    return {
+        "skill": er.skill.value,
+        "stage": exploration_stage_for(er.progress_after, er.unlocked_now),
+        "unlocked_now": er.unlocked_now,
+    }
+
+
 def build_slot_fact(slot_result: SlotResolutionResult) -> DailySlotFact:
     fact = DailySlotFact(
         slot_index=slot_result.slot_index,
@@ -162,6 +182,7 @@ def build_slot_fact(slot_result: SlotResolutionResult) -> DailySlotFact:
             fact.free_action_detail = f"personal:{fa.personal_type.value}"
     fact.training_summary = _skill_training_summary(slot_result)
     fact.social_summary = _social_summary(slot_result)
+    fact.exploration_summary = _exploration_summary(slot_result)
     return fact
 
 
@@ -176,14 +197,58 @@ def _effect_semantic_summary(event_result: EventResult) -> List[str]:
     return out
 
 
-def _build_event_fact(event_result: EventResult) -> DailyEventFact:
+def _build_event_fact(
+    event_result: EventResult,
+    event_definition_by_id: Mapping[str, EventDefinition],
+) -> DailyEventFact:
+    definition = event_definition_by_id.get(event_result.event_id)
+    if definition is None:
+        raise ValueError(
+            f"event_results references missing EventDefinition "
+            f"event_id={event_result.event_id}."
+        )
+    event_brief = str(definition.director_brief or "").strip()
+    if not event_brief:
+        raise ValueError(
+            f"EventDefinition {definition.event_id} has no factual director_brief."
+        )
+
+    choice_brief: Optional[str] = None
+    if (
+        definition.interaction_mode == EventInteractionMode.INTERRUPTIVE
+        and event_result.choice_id is None
+    ):
+        raise ValueError(
+            f"Resolved INTERRUPTIVE EventResult {definition.event_id} is missing choice_id."
+        )
+    if event_result.choice_id is not None:
+        matching_choices = [
+            choice
+            for choice in definition.choices
+            if choice.choice_id == event_result.choice_id
+        ]
+        if len(matching_choices) != 1:
+            raise ValueError(
+                f"EventResult choice_id={event_result.choice_id} must match exactly one "
+                f"choice in EventDefinition {definition.event_id}; "
+                f"matched {len(matching_choices)}."
+            )
+        choice_brief = str(matching_choices[0].director_brief or "").strip()
+        if not choice_brief:
+            raise ValueError(
+                f"EventDefinition {definition.event_id} choice_id={event_result.choice_id} "
+                "has no factual director_brief."
+            )
+
     return DailyEventFact(
         event_id=event_result.event_id,
+        event_brief=event_brief,
         category=event_result.category.value,
         tier=event_result.tier.value,
         interaction_mode=event_result.interaction_mode.value,
         context_npc_id=event_result.context_npc_id,
         choice_id=event_result.choice_id,
+        choice_brief=choice_brief,
         effect_summary=_effect_semantic_summary(event_result),
     )
 
@@ -209,6 +274,8 @@ def build_daily_writing_context(
     slot_results: Sequence[SlotResolutionResult],
     event_results: Sequence[EventResult],
     settlement_result: DaySettlementResult,
+    *,
+    event_definition_by_id: Mapping[str, EventDefinition],
 ) -> DailyWritingContext:
     """从已完成一天构造 canonical DailyWritingContext。
 
@@ -219,6 +286,8 @@ def build_daily_writing_context(
       （日期身份由调用方保证：slot_resolution_history(save_id, game_date) 查询或
       当日 Application in-memory collection；SlotResolutionResult 本身不携带日期）；
     - event_results 均属于同一天、event_instance_id 唯一；
+    - 每条 event_result 必须能从显式传入的 Definition lookup 恢复 factual
+      event brief；已解决的 INTERRUPTIVE event 还必须恢复唯一 choice brief；
     - settlement_result.settled_date 等于当天，且其 condition_result.before 等于
       completed_day_state.condition 快照（防止错传其他 GameState 的同日 settlement）。
     """
@@ -349,7 +418,10 @@ def build_daily_writing_context(
             resource_level=company.resource_level,
         ),
         slots=[build_slot_fact(sr) for sr in sorted(slot_list, key=lambda s: s.slot_index)],
-        events=[_build_event_fact(er) for er in event_results],
+        events=[
+            _build_event_fact(er, event_definition_by_id)
+            for er in event_results
+        ],
         condition=DailyConditionFacts(day_start=day_start, day_end=day_end or {}),
         menstrual=menstrual,
         relationships_touched=_npc_writing_contexts(state, touched_ids),

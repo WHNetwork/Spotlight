@@ -112,7 +112,7 @@ class MetaState(BaseModel):
     """
 
     save_id: int = 0
-    schema_version: int = 8
+    schema_version: int = 9
     rng_seed: int = 0
 
 
@@ -244,9 +244,17 @@ class SkillState(BaseModel):
     form：近期手感 / 当前熟练状态（0–100，float，允许趋近式增长产生小数）；
     talent：隐藏学习天赋（0–100，只影响学习效率，不决定技能上限）；
     unlocked：是否已被正式发现 / 解锁；
-    last_practiced_date：上次正式训练日期。
+    last_practiced_date：上次正式训练日期；
+    exploration_progress：入门发现进度（0–100），不是 Skill XP。
 
-    一致性：unlocked → value/form 必须存在；locked → value/form 必须为 None。
+    三个概念：
+    TRAIN   = 已解锁技能的正式训练；
+    EXPLORE = 尚未入门领域的探索（ACTING / CREATION）；
+    exploration_progress = 入门发现阶段进度（unlocked 后恒为 100），
+    绝不可并入 XP。
+
+    一致性：unlocked → value/form 必存在且 exploration_progress == 100；
+    locked → value/form 必须为 None 且 exploration_progress < 100。
     """
 
     value: Optional[int] = Field(default=None, ge=0, le=100)
@@ -255,15 +263,20 @@ class SkillState(BaseModel):
     talent: int = Field(default=50, ge=0, le=100)
     unlocked: bool = False
     last_practiced_date: Optional[date] = None
+    exploration_progress: int = Field(default=0, ge=0, le=100)
 
     @model_validator(mode="after")
     def _validate_locked_consistency(self) -> "SkillState":
         if self.unlocked:
             if self.value is None or self.form is None:
                 raise ValueError("unlocked skill 的 value / form 必须存在。")
+            if self.exploration_progress != 100:
+                raise ValueError("unlocked skill 的 exploration_progress 必须为 100。")
         else:
             if self.value is not None or self.form is not None:
                 raise ValueError("locked skill 的 value / form 必须为 None。")
+            if self.exploration_progress >= 100:
+                raise ValueError("locked skill 的 exploration_progress 必须 < 100。")
         return self
 
 
@@ -714,6 +727,14 @@ class EventTriggerMode(str, Enum):
     LLM_ASSISTED = "LLM_ASSISTED"
 
 
+class EventNPCBindingSource(str, Enum):
+    """How an event obtains its one canonical context NPC during preparation."""
+
+    NONE = "NONE"
+    SLOT_CONTEXT = "SLOT_CONTEXT"
+    ROSTER = "ROSTER"
+
+
 class EventCategory(str, Enum):
     SCHEDULED = "SCHEDULED"
     CONDITIONAL = "CONDITIONAL"
@@ -926,6 +947,22 @@ class SkillTrainingResult(BaseModel):
     levels_gained: int
 
 
+class SkillExplorationResult(BaseModel):
+    """一次 EXPLORE 的机械结果（transient，不持久化进 GameState）。
+
+    unlocked_now：本次（before < 100 且 after == 100）是否恰好正式解锁。
+    数值属于 canonical mechanics，Narrative 层只消费语义阶段，不直接看数字。
+    """
+
+    skill: SkillId
+    progress_before: int
+    progress_gain: int
+    progress_after: int
+    unlocked_before: bool
+    unlocked_after: bool
+    unlocked_now: bool
+
+
 class OvernightConditionResult(BaseModel):
     """跨夜 Condition 结算的简明事实（transient，不持久化）。"""
 
@@ -1038,7 +1075,8 @@ class SlotResolutionResult(BaseModel):
     """刚刚这一个 Slot 的机械世界事实（不持久化进 GameState）。
 
     保存执行时该 Slot 的 Action / Course 快照（company_course / free_action）
-    与两个领域结算结果（skill_result / condition_result）。
+    与三个领域结算结果（skill_result / condition_result / relationship_result /
+    exploration_result）。
     completed 恒为 True：统一 Resolver 只有在全部 Resolution 成功并
     mark_completed 后才构造本结果；失败直接抛错，不产生半成品。
     以后由 Daily Log / Database History 负责持久化结构化 Slot 事实。
@@ -1051,6 +1089,7 @@ class SlotResolutionResult(BaseModel):
     skill_result: Optional[SkillTrainingResult] = None
     condition_result: ConditionResolutionResult
     relationship_result: Optional[RelationshipInteractionResult] = None
+    exploration_result: Optional[SkillExplorationResult] = None
     completed: bool
 
     @model_validator(mode="after")
@@ -1068,6 +1107,24 @@ class SlotResolutionResult(BaseModel):
         else:
             if self.relationship_result is not None:
                 raise ValueError("非 SOCIAL Slot 不允许携带 relationship_result。")
+        is_explore = (
+            self.slot_kind == SlotKind.FREE
+            and self.free_action is not None
+            and self.free_action.kind == FreeActionKind.EXPLORE
+        )
+        if is_explore:
+            if self.exploration_result is None:
+                raise ValueError("EXPLORE Slot 必须带有 exploration_result。")
+            expected_skill = (
+                SkillId(self.free_action.exploration_domain.value)
+                if self.free_action.exploration_domain is not None
+                else None
+            )
+            if expected_skill is None or self.exploration_result.skill != expected_skill:
+                raise ValueError("exploration_result.skill 必须等于 free_action.exploration_domain 对应技能。")
+        else:
+            if self.exploration_result is not None:
+                raise ValueError("非 EXPLORE Slot 不允许携带 exploration_result。")
         return self
 
 

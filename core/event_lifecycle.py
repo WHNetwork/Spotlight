@@ -78,7 +78,12 @@ def prepare_post_slot_event_phase(
             and d.interaction_mode == EventInteractionMode.NON_INTERRUPTIVE
         )
     ]
-    evaluation = prepare_event_evaluation(immediate, context, history)
+    evaluation = prepare_event_evaluation(
+        immediate,
+        context,
+        history,
+        post_slot_state.meta.rng_seed,
+    )
     return PostSlotEventPreparation(
         context=context,
         evaluation=evaluation,
@@ -124,7 +129,7 @@ def finalize_post_slot_event_phase(
     )
 
     if decision.interaction_mode == EventInteractionMode.NON_INTERRUPTIVE:
-        context_npc_id = preparation.context.context_npc_id
+        context_npc_id = decision.context_npc_id
         working_state, applied_effects = apply_event_actions(
             working_state, definition.effects, decision.game_date, context_npc_id
         )
@@ -148,7 +153,7 @@ def finalize_post_slot_event_phase(
         soft_relevance=decision.soft_relevance,
         effective_probability=decision.effective_probability,
         available_choice_ids=tuple(c.choice_id for c in definition.choices),
-        context_npc_id=preparation.context.context_npc_id,
+        context_npc_id=decision.context_npc_id,
     )
     working_state.pending_event = pending
     return working_state, PostSlotEventOutcome(decision=decision, event_result=None, pending_event=pending)

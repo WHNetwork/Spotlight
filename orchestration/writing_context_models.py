@@ -43,6 +43,37 @@ def band_for(value: Optional[float]) -> str:
     return NarrativeBand.VERY_HIGH.value
 
 
+class ExplorationStage(str, Enum):
+    """EXPLORE 入门发现的稳定语义阶段（不给 Writer 精确 progress 数值）。
+
+    语义：
+    - JUST_STARTED      刚刚开始摸索（0–24）；
+    - GETTING_FAMILIAR  逐渐熟悉（25–49）；
+    - FINDING_FEEL      开始找到感觉（50–74）；
+    - NEAR_ENTRY        接近入门（75–99）；
+    - UNLOCKED          今天正式入门（progress_after == 100）。
+    """
+
+    JUST_STARTED = "JUST_STARTED"
+    GETTING_FAMILIAR = "GETTING_FAMILIAR"
+    FINDING_FEEL = "FINDING_FEEL"
+    NEAR_ENTRY = "NEAR_ENTRY"
+    UNLOCKED = "UNLOCKED"
+
+
+def exploration_stage_for(progress_after: int, unlocked_now: bool) -> str:
+    """progress_after → 语义阶段（unlocked_now 强制 UNLOCKED）。"""
+    if unlocked_now or progress_after >= 100:
+        return ExplorationStage.UNLOCKED.value
+    if progress_after >= 75:
+        return ExplorationStage.NEAR_ENTRY.value
+    if progress_after >= 50:
+        return ExplorationStage.FINDING_FEEL.value
+    if progress_after >= 25:
+        return ExplorationStage.GETTING_FAMILIAR.value
+    return ExplorationStage.JUST_STARTED.value
+
+
 class NPCWritingContext(BaseModel):
     """单个 NPC 的写作上下文：身份 + 当前关系距离 + 稳定 Character Guidance。
 

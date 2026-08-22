@@ -45,7 +45,7 @@ from core.models import (
     SlotResolutionResult,
     TraineeState,
 )
-from core.event_triggers import EventDefinition
+from core.event_triggers import EventCandidate, EventDefinition
 
 _MAX_RECENT_EVENTS = 8
 _MAX_REASON_TAGS = 4
@@ -66,15 +66,26 @@ class EventDirectorStatus(str, Enum):
     PROVIDER_ERROR = "PROVIDER_ERROR"
 
 
+class EventDirectorNPCContext(BaseModel):
+    npc_id: str
+    name: str
+    role: str
+    specialty: Optional[str] = None
+    familiarity: float
+    closeness: float
+    trust: float
+    tension: float
+
+
 class EventDirectorCandidate(BaseModel):
-    """只暴露判断自然性所需信息；不含 effects / base_probability /
-    selection_weight / priority 数值 / probability draw / eligibility。"""
+    """只暴露判断自然性所需信息；不含 effects / probability / eligibility。"""
 
     event_id: str
     category: str
     tier: str
     interaction_mode: str
     brief: str
+    context_npc: Optional[EventDirectorNPCContext] = None
 
 
 class EventDirectorSlotContext(BaseModel):
@@ -85,17 +96,6 @@ class EventDirectorSlotContext(BaseModel):
     free_action_detail: Optional[str] = None
     skill_result: Optional[dict] = None
     relationship_interaction: Optional[dict] = None
-
-
-class EventDirectorNPCContext(BaseModel):
-    npc_id: str
-    name: str
-    role: str
-    specialty: Optional[str] = None
-    familiarity: float
-    closeness: float
-    trust: float
-    tension: float
 
 
 class EventDirectorRecentEvent(BaseModel):
@@ -308,7 +308,7 @@ def _build_recent_events(recent_event_results: Sequence[EventResult]) -> List[Ev
 def build_event_director_context(
     game_state: GameState,
     slot_result: SlotResolutionResult,
-    candidates: Sequence[EventDefinition],
+    candidates: Sequence[EventCandidate],
     recent_event_results: Sequence[EventResult] = (),
 ) -> EventDirectorContext:
     """构建 Event Director 上下文（read-only）。
@@ -335,7 +335,8 @@ def build_event_director_context(
 
     seen: set = set()
     candidate_dtos: List[EventDirectorCandidate] = []
-    for definition in candidates:
+    for candidate in candidates:
+        definition = candidate.definition
         if definition.trigger_mode != EventTriggerMode.LLM_ASSISTED:
             raise ValueError(
                 f"Event Director 只接受 LLM_ASSISTED candidate（收到 {definition.event_id}: {definition.trigger_mode.value}）。"
@@ -349,6 +350,11 @@ def build_event_director_context(
             tier=definition.tier.value,
             interaction_mode=definition.interaction_mode.value,
             brief=definition.director_brief,
+            context_npc=_build_npc_context(
+                candidate.context_npc_id,
+                game_state.npcs,
+                game_state.relationships,
+            ) if candidate.context_npc_id is not None else None,
         ))
 
     completed_slots = sum(1 for s in game_state.day.slots if s.status.value == "COMPLETED")
@@ -369,7 +375,9 @@ def build_event_director_context(
     context_npc_id = slot_result.relationship_result.npc_id if slot_result.relationship_result is not None else None
 
     related_npcs: List[EventDirectorNPCContext] = []
-    for npc_id in _collect_explicit_npc_ids(candidates):
+    for npc_id in _collect_explicit_npc_ids(
+        [candidate.definition for candidate in candidates]
+    ):
         if npc_id == context_npc_id:
             continue
         # EXPLICIT_NPC 明确引用：缺失即明确失败（不允许 silent skip）。
@@ -400,6 +408,14 @@ def build_event_director_context(
 # ---------------------------------------------------------------------------
 
 _SYSTEM_PROMPT = (
+    "NPC binding rule: when evaluating each candidate, candidate.context_npc is the "
+    "authoritative NPC already bound to that event by Python; use it strictly when judging "
+    "whether that candidate is natural, relevant, and worth triggering. The top-level "
+    "context_npc only describes the NPC involved in the just-completed slot and may be "
+    "different. Never substitute the top-level NPC for a candidate-bound NPC, and never "
+    "choose, change, or output an NPC yourself. If candidate.context_npc is null, that "
+    "candidate binds no specific NPC; do not infer one from the top-level context_npc or "
+    "the roster.\n"
     "你是《星光练习室》游戏的 Event Director 软判断器，不是叙事作者。\n"
     "任务：基于提供的既定世界事实，从已经通过 Python 硬规则筛选的候选事件中，"
     "选择最多一个当前最自然的事件，或者明确选择 none。\n"
@@ -693,7 +709,7 @@ def run_event_director(
 def judge_llm_assisted_events(
     game_state: GameState,
     slot_result: SlotResolutionResult,
-    candidates: Sequence[EventDefinition],
+    candidates: Sequence[EventCandidate],
     recent_event_results: Sequence[EventResult] = (),
     provider: Optional[BaseProvider] = None,
 ) -> EventDirectorCallResult:

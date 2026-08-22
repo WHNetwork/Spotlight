@@ -9,11 +9,14 @@ from core.models import (
     FreeActionKind,
     GameState,
     RelationshipInteractionResult,
+    SkillExplorationResult,
+    SkillId,
     SkillTrainingResult,
     SlotKind,
     SlotResolutionResult,
 )
 from core.relationships import resolve_social_interaction
+from core.skill_exploration import resolve_skill_exploration
 from core.skill_training import (
     resolve_company_skill_training,
     resolve_self_training,
@@ -34,13 +37,15 @@ def resolve_current_slot(game_state: GameState) -> Tuple[GameState, SlotResoluti
        - SCHOOL / REST：天然 ready；
        - COMPANY：必须已有 company_course；
        - FREE：必须已有 free_action；
-    4. Skill Resolution（如该 Slot 存在 Skill Training）——使用训练开始前 Condition；
-    5. Condition Resolution；
-    6. Relationship Resolution（仅 FREE → SOCIAL：familiarity 增长，
-       其他 Slot 为 None）；
-    7. day.mark_completed(slot.index)；
-    8. 构造 SlotResolutionResult（completed=True）；
-    9. 返回 (working_state, result)。
+     4. Skill Resolution（如该 Slot 存在 Skill Training）——使用训练开始前 Condition；
+     5. Exploration Resolution（仅 FREE → EXPLORE）——使用 FreeAction condition cost
+        应用之前的 Condition 快照，疲劳成本不倒扣本次探索质量；
+     6. Condition Resolution；
+     7. Relationship Resolution（仅 FREE → SOCIAL：familiarity 增长，
+        其他 Slot 为 None）；
+     8. day.mark_completed(slot.index)；
+     9. 构造 SlotResolutionResult（completed=True）；
+     10. 返回 (working_state, result)。
 
     职责边界：
     - 只编排已存在的领域 Resolver（skill_training / condition_resolution），
@@ -76,6 +81,7 @@ def resolve_current_slot(game_state: GameState) -> Tuple[GameState, SlotResoluti
     skill_result: Optional[SkillTrainingResult] = None
     condition_result: ConditionResolutionResult
     relationship_result: Optional[RelationshipInteractionResult] = None
+    exploration_result: Optional[SkillExplorationResult] = None
 
     if slot.kind == SlotKind.FREE:
         if slot.free_action is not None and slot.free_action.kind == FreeActionKind.TRAIN:
@@ -84,6 +90,16 @@ def resolve_current_slot(game_state: GameState) -> Tuple[GameState, SlotResoluti
                 working_state.skills,
                 working_state.condition,
                 working_state.time.current_date,
+            )
+        elif slot.free_action is not None and slot.free_action.kind == FreeActionKind.EXPLORE:
+            if slot.free_action.exploration_domain is None:
+                raise SlotResolutionError("EXPLORE 行动缺少 exploration_domain，无法结算。")
+            skill_id = SkillId(slot.free_action.exploration_domain.value)
+            skill_state = getattr(working_state.skills, skill_id.value)
+            exploration_result = resolve_skill_exploration(
+                skill_state,
+                working_state.condition,
+                skill_id,
             )
         condition_result = resolve_current_slot_condition(day, working_state.condition)
         if slot.free_action is not None and slot.free_action.kind == FreeActionKind.SOCIAL:
@@ -122,6 +138,7 @@ def resolve_current_slot(game_state: GameState) -> Tuple[GameState, SlotResoluti
         skill_result=skill_result,
         condition_result=condition_result,
         relationship_result=relationship_result,
+        exploration_result=exploration_result,
         completed=True,
     )
     return working_state, result

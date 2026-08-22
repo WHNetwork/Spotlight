@@ -230,9 +230,11 @@ def apply_skill_initial(state: GameState, character: Dict[str, Any], tags: List[
             skill.unlocked = False
             skill.value = None
             skill.form = None
+            skill.exploration_progress = 0
             log.append(f"{key}.talent = {skill.talent}（隐藏天赋，已生成，未解锁）")
         else:
             skill.unlocked = True
+            skill.exploration_progress = 100
 
     values: Dict[str, int] = {"dance": 5, "vocal": 5, "rap": 3, "stage": 4, "camera": 3, "language": 5}
     cap = 15

@@ -11,7 +11,7 @@ Interruptive Event Scene（LLM Layer 4）。
 from __future__ import annotations
 
 from datetime import date
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -46,6 +46,11 @@ class EventSceneEventFact(BaseModel):
     brief: str
 
 
+class EventSceneChoiceFact(BaseModel):
+    choice_id: str
+    brief: str
+
+
 class EventSceneContext(BaseModel):
     event_instance_id: str
     event_id: str
@@ -53,6 +58,7 @@ class EventSceneContext(BaseModel):
     trainee_day: int
     slot: DailySlotFact
     event: EventSceneEventFact
+    choices: List[EventSceneChoiceFact]
     condition: Dict[str, str] = Field(default_factory=dict)
     menstrual: Optional[DailyMenstrualFacts] = None
     context_npc: Optional[NPCWritingContext] = None
@@ -191,6 +197,13 @@ def build_event_scene_context(
             category=event_definition.category.value,
             brief=event_definition.director_brief,
         ),
+        choices=[
+            EventSceneChoiceFact(
+                choice_id=choice.choice_id,
+                brief=choice.director_brief,
+            )
+            for choice in event_definition.choices
+        ],
         condition=condition,
         menstrual=menstrual,
         context_npc=context_npc,
@@ -204,25 +217,26 @@ def build_event_scene_context(
 
 
 EVENT_SCENE_TASK_INSTRUCTIONS: str = """【Event Scene 任务】
-把当前正在发生的一段特殊时刻写成玩家此刻立即阅读的即时场景正文。
+把 FACT DATA 中已经触发的 Event 写成玩家此刻立即阅读的短场景，并严格停在选择前。
+这是事实呈现任务，不是剧情扩写任务。
 
-1. 视角：第二人称有限视角（“你”）；只写角色能感知的世界。
-2. 这是即时生活场景，不是一天总结、日记、报告或系统提示。
-3. 必须停在“玩家需要做出决定的那个瞬间”就结束；禁止继续写主角答应/拒绝/
-   离开/留下/道歉/反击等任何会对应选择的行为，禁止写选择后的后果。
-4. 不得暗示哪个方向是更善良/更聪明/更成熟的“正确答案”；只呈现情境本身。
-5. 不输出选择列表，不重新措辞选项，不写“你要怎么做？”——选项由界面展示。
-6. 事件可能只是需要回应的一件小事；小事件就写小，不要人为戏剧化。
-7. 不要透露任何机制后果（关系会怎样、对方会怎样、数值会怎样）。
-8. 收尾自然即可（对方把东西递过来、老师看着你等你的回答、她说完后没有再继续），
-   不要用“空气突然安静”“所有视线落在你身上”“现在决定权到了你手里”这类固定悬念模板。
-9. 纯正文：无标题、无 Markdown、无列表、无内部术语。
-10. 必要对白只用于呈现已经发生的情境，且受人物稳定性格与当前关系距离约束；
-    不得通过对白新增秘密、承诺、历史、家庭、公司信息或稳定人格结论；
-    不要为了“有人味”强行塞对白。
-11. 生理期只有与当前场景真正相关时才自然表现。
-12. 不创造不存在的人：Context 里没有的人物（“旁边的练习生”“某位老师”等）
-    不得凭空出现。"""
+1. 使用第二人称有限视角（“你”），只写角色当下能感知的内容。event.brief 是已经发生的
+   factual setup；不得增加新的评价、训练结果、背景、安排、邀请或后续事件。
+2. choices 列出全部正式分叉。每个 choices[*].brief 都是不可改写的行为语义：场景必须让
+   每个正式选择仍然真实可行；不得合并、删减、增加选择，不得把一个动作偷换成另一个动作。
+3. 例如正式分叉是“再完整做一遍 / 写下纠正要点”，场景必须同时保留“继续完整练习”和
+   “停止完整练习、整理要点”两种可能；绝不能改成“最后一遍 / 算了”。
+4. 不必让 NPC 念出菜单，也不输出选项列表或 choice_id。自然形成现实分叉后就停住；
+   不写“你要怎么做”，不暗示哪项更善良、成熟、努力或正确。
+5. 最后一个时刻必须仍在 decision boundary：禁止替玩家答应、拒绝、留下、离开、道歉、
+   反击或采取任何对应 Choice 的动作；禁止写 Choice effects、关系变化和任何后果。
+6. 对白只可承载 event.brief、正式分叉或无后续义务的短寒暄。FACT DATA 没有老师/NPC 评价，
+   对白与旁白都不得创造评价；不得借 Character Guidance 推断对方特别关注玩家。
+7. Context 没有的人物不得成为场景参与者。普通背景人声可以存在，但不能替其创造身份、
+   行为、对白或与玩家的互动。
+8. 小事写小，事实少就写短。收尾可以是对方等一句回应、物件仍放在面前、剩余时间摆在那里；
+   不用“空气突然安静”“所有目光聚过来”“决定权到了你手里”等悬念模板。
+9. 生理期仅在与此刻确实相关时生活化表现。纯正文，无标题、Markdown、列表或内部术语。"""
 
 
 def generate_event_scene(

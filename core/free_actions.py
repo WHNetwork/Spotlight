@@ -11,6 +11,7 @@ from core.models import (
     SkillsState,
     SlotKind,
 )
+from core.skill_exploration import EXPLORABLE_SKILLS
 
 
 class FreeActionError(ValueError):
@@ -68,10 +69,23 @@ def assign_free_action(
         if not skill.unlocked:
             raise FreeActionError(f"技能 {action.skill.value} 尚未解锁，不能 TRAIN。")
     elif action.kind == FreeActionKind.EXPLORE:
-        skill = _skill_by_id(skills_state, SkillId(action.exploration_domain.value))
+        if action.exploration_domain is None:
+            raise FreeActionError("EXPLORE 必须携带 exploration_domain。")
+        skill_id = SkillId(action.exploration_domain.value)
+        if skill_id not in EXPLORABLE_SKILLS:
+            raise FreeActionError(
+                f"EXPLORE 只允许 {sorted(s.value for s in EXPLORABLE_SKILLS)}，"
+                f"不支持 {action.exploration_domain.value}。"
+            )
+        skill = _skill_by_id(skills_state, skill_id)
         if skill.unlocked:
             raise FreeActionError(
                 f"{action.exploration_domain.value} 已经解锁，不能 EXPLORE，应改用 TRAIN。"
+            )
+        if not (0 <= skill.exploration_progress < 100):
+            raise FreeActionError(
+                f"{action.exploration_domain.value}.exploration_progress 状态非法："
+                f"{skill.exploration_progress}（locked 技能必须 0–99）。"
             )
     elif action.kind == FreeActionKind.SOCIAL:
         target = action.target_npc_id

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
-from core.event_effects import validate_event_actions
-from core.event_models import EventChoiceDefinition, EventSoftJudgment, EventTriggerDecision
+from core.event_definition import EventCandidate, EventDefinition, EventEvaluation
+from core.event_models import EventSoftJudgment, EventTriggerDecision
 from core.models import (
     CompanyCourse,
     CompanyState,
@@ -14,12 +14,16 @@ from core.models import (
     EventCategory,
     EventDomainAction,
     EventInteractionMode,
+    EventNPCBindingSource,
     EventTier,
     EventTriggerMode,
     FreeAction,
     GameState,
     NPCProfile,
+    NPCRole,
     PlayerState,
+    RelationshipActionTarget,
+    RelationshipEventAction,
     RelationshipState,
     SkillsState,
     SlotKind,
@@ -148,101 +152,6 @@ class EventHistorySnapshot:
 
 
 # ---------------------------------------------------------------------------
-# EventDefinition（静态规则定义，包含 Python callable，不使用 Pydantic / DB）
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class EventDefinition:
-    """静态事件规则定义。
-
-    使用 frozen dataclass 是因为其中包含 eligibility 谓词（Python callable），
-    Pydantic 无法直接承载 callable 语义；事件定义也不进入数据库。
-
-    choices 只允许定义在 INTERRUPTIVE 事件上（至少 1 个，choice_id 唯一）；
-    NON_INTERRUPTIVE 事件 choices 必须为空。
-    """
-
-    event_id: str
-    category: EventCategory
-    trigger_mode: EventTriggerMode
-    tier: EventTier
-    interaction_mode: EventInteractionMode
-
-    priority: int = 0
-    base_probability: float = 1.0
-    selection_weight: float = 1.0
-
-    once: bool = False
-    cooldown_days: int = 0
-
-    available_from_trainee_day: Optional[int] = None
-    available_until_trainee_day: Optional[int] = None
-
-    director_brief: str = ""
-
-    eligibility: Callable[[SlotEventContext], bool] = lambda context: True
-
-    choices: Tuple[EventChoiceDefinition, ...] = ()
-    effects: Tuple[EventDomainAction, ...] = ()
-
-    def validate(self) -> None:
-        if not self.event_id or not str(self.event_id).strip():
-            raise ValueError("event_id 必须是非空字符串。")
-        if not (0.0 <= self.base_probability <= 1.0):
-            raise ValueError(f"event {self.event_id} 的 base_probability 必须在 0–1 之间。")
-        if self.selection_weight <= 0.0:
-            raise ValueError(f"event {self.event_id} 的 selection_weight 必须 > 0。")
-        if self.cooldown_days < 0:
-            raise ValueError(f"event {self.event_id} 的 cooldown_days 不能为负。")
-        if self.eligibility is None:
-            raise ValueError(f"event {self.event_id} 缺少 eligibility 谓词。")
-
-        choice_ids = [c.choice_id for c in self.choices]
-        if len(set(choice_ids)) != len(choice_ids):
-            raise ValueError(f"event {self.event_id} 的 choice_id 必须唯一。")
-        if self.interaction_mode == EventInteractionMode.NON_INTERRUPTIVE and self.choices:
-            raise ValueError(f"NON_INTERRUPTIVE event {self.event_id} 不允许定义 choices。")
-        if self.interaction_mode == EventInteractionMode.INTERRUPTIVE and not self.choices:
-            raise ValueError(f"INTERRUPTIVE event {self.event_id} 至少需要 1 个 choice。")
-        if self.interaction_mode == EventInteractionMode.INTERRUPTIVE and self.effects:
-            raise ValueError(
-                f"INTERRUPTIVE event {self.event_id} 不允许携带顶层 effects（机械后果必须属于 Choice.effects）。"
-            )
-        # director_brief 仅在 LLM_ASSISTED（Event Director 语义判断）或 INTERRUPTIVE
-        # （Event Scene 复用为 canonical setup brief）时必填，且必须 strip 非空。
-        requires_brief = (
-            self.trigger_mode == EventTriggerMode.LLM_ASSISTED
-            or self.interaction_mode == EventInteractionMode.INTERRUPTIVE
-        )
-        if requires_brief and (not self.director_brief or not str(self.director_brief).strip()):
-            raise ValueError(f"event {self.event_id} 必须拥有非空 director_brief（strip 后）。")
-        for choice in self.choices:
-            if not choice.choice_id or not str(choice.choice_id).strip():
-                raise ValueError(f"event {self.event_id} 的 choice_id 必须非空。")
-            if not choice.director_brief or not str(choice.director_brief).strip():
-                raise ValueError(f"event {self.event_id} 的 choice director_brief 必须非空。")
-        validate_event_actions(self.effects)
-        for choice in self.choices:
-            validate_event_actions(choice.effects)
-
-
-# ---------------------------------------------------------------------------
-# 两阶段评估结果
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class EventEvaluation:
-    """阶段一（Python Hard Gate）之后的 eligible 候选分组。"""
-
-    eligible: Tuple[EventDefinition, ...]
-    deterministic: Tuple[EventDefinition, ...]
-    probabilistic: Tuple[EventDefinition, ...]
-    llm_assisted: Tuple[EventDefinition, ...]
-
-
-# ---------------------------------------------------------------------------
 # Stable Event RNG / Instance ID（基于 world rng_seed，不写入、不修改 rng_seed）
 # ---------------------------------------------------------------------------
 
@@ -314,31 +223,106 @@ def _passes_hard_gate(
     return True
 
 
+def _stable_context_npc_index(
+    rng_seed: int,
+    context: SlotEventContext,
+    event_id: str,
+    candidate_count: int,
+) -> int:
+    namespace = (
+        f"event-context-npc:{rng_seed}:{context.current_date.isoformat()}:"
+        f"{context.slot_index}:{event_id}"
+    )
+    digest = hashlib.sha256(namespace.encode("utf-8")).hexdigest()
+    return int(digest, 16) % candidate_count
+
+
+def _prepare_bound_candidate(
+    definition: EventDefinition,
+    context: SlotEventContext,
+    history: EventHistorySnapshot,
+    rng_seed: int,
+) -> Optional[EventCandidate]:
+    """Bind an NPC before candidate preparation; never defer selection to LLM/finalize."""
+    if definition.context_npc_source == EventNPCBindingSource.NONE:
+        unbound_context = replace(context, context_npc_id=None)
+        if not _passes_hard_gate(definition, unbound_context, history):
+            return None
+        return EventCandidate(definition=definition, context_npc_id=None)
+
+    profiles = context.npcs or {}
+    relationships = context.relationships or {}
+
+    if definition.context_npc_source == EventNPCBindingSource.SLOT_CONTEXT:
+        npc_id = context.context_npc_id
+        if npc_id is None:
+            return None
+        profile = profiles.get(npc_id)
+        if profile is None or not profile.active or npc_id not in relationships:
+            return None
+        if definition.context_npc_role is not None and profile.role != definition.context_npc_role:
+            return None
+        bound_context = replace(context, context_npc_id=npc_id)
+        if not _passes_hard_gate(definition, bound_context, history):
+            return None
+        return EventCandidate(definition=definition, context_npc_id=npc_id)
+
+    eligible_npc_ids: List[str] = []
+    for npc_id, profile in sorted(profiles.items(), key=lambda item: item[0]):
+        if not profile.active or profile.role != definition.context_npc_role:
+            continue
+        if npc_id not in relationships:
+            continue
+        candidate_context = replace(context, context_npc_id=npc_id)
+        if _passes_hard_gate(definition, candidate_context, history):
+            eligible_npc_ids.append(npc_id)
+
+    if not eligible_npc_ids:
+        return None
+    selected_index = _stable_context_npc_index(
+        rng_seed, context, definition.event_id, len(eligible_npc_ids)
+    )
+    return EventCandidate(
+        definition=definition,
+        context_npc_id=eligible_npc_ids[selected_index],
+    )
+
+
 def prepare_event_evaluation(
     definitions: List[EventDefinition],
     context: SlotEventContext,
     history: EventHistorySnapshot,
+    rng_seed: int,
 ) -> EventEvaluation:
     """阶段一：Python Hard Gate + Daily Budget，得到 eligible 候选分组。
 
     Daily budget 只硬限制 PROBABILISTIC / LLM_ASSISTED；
     DETERMINISTIC 通过硬条件后不受随机事件预算阻挡。
     """
-    eligible: List[EventDefinition] = []
+    eligible: List[EventCandidate] = []
     for definition in definitions:
         definition.validate()
-        if not _passes_hard_gate(definition, context, history):
+        candidate = _prepare_bound_candidate(
+            definition, context, history, rng_seed
+        )
+        if candidate is None:
             continue
         if definition.trigger_mode in (EventTriggerMode.PROBABILISTIC, EventTriggerMode.LLM_ASSISTED):
             budget = DAILY_EVENT_BUDGET.get(definition.tier, 0)
             today_count = history.minor_count_today if definition.tier == EventTier.MINOR else history.major_count_today
             if today_count >= budget:
                 continue
-        eligible.append(definition)
+        eligible.append(candidate)
 
-    deterministic = tuple(d for d in eligible if d.trigger_mode == EventTriggerMode.DETERMINISTIC)
-    probabilistic = tuple(d for d in eligible if d.trigger_mode == EventTriggerMode.PROBABILISTIC)
-    llm_assisted = tuple(d for d in eligible if d.trigger_mode == EventTriggerMode.LLM_ASSISTED)
+    deterministic = tuple(
+        c for c in eligible if c.definition.trigger_mode == EventTriggerMode.DETERMINISTIC
+    )
+    probabilistic = tuple(
+        c for c in eligible if c.definition.trigger_mode == EventTriggerMode.PROBABILISTIC
+    )
+    llm_assisted = tuple(
+        c for c in eligible if c.definition.trigger_mode == EventTriggerMode.LLM_ASSISTED
+    )
     return EventEvaluation(
         eligible=tuple(eligible),
         deterministic=deterministic,
@@ -353,7 +337,7 @@ def prepare_event_evaluation(
 
 
 def _validate_soft_judgment(
-    llm_candidates: Tuple[EventDefinition, ...],
+    llm_candidates: Tuple[EventCandidate, ...],
     soft_judgment: EventSoftJudgment,
 ) -> None:
     """LLM 不能创造 Event ID；Core 同时防御语义非法 judgment（不信任 Orchestration）。
@@ -363,7 +347,7 @@ def _validate_soft_judgment(
     - should_trigger_any=True → 必须恰好一条 score（零或一个事件，禁止多选）；
     - relevance 0..1 由 Pydantic schema 保证。
     """
-    allowed = {d.event_id for d in llm_candidates}
+    allowed = {candidate.definition.event_id for candidate in llm_candidates}
     unknown = [s.event_id for s in soft_judgment.scores if s.event_id not in allowed]
     if unknown:
         raise ValueError(f"EventSoftJudgment 包含未知 event_id（不允许 LLM 创造事件）：{unknown}")
@@ -410,19 +394,21 @@ def finalize_event_selection(
     slot_index = context.slot_index
     game_date = context.current_date
 
-    triggered: List[Tuple[EventDefinition, float, Optional[float]]] = []
+    triggered: List[Tuple[EventCandidate, float, Optional[float]]] = []
 
-    for definition in evaluation.deterministic:
-        triggered.append((definition, 1.0, None))
+    for candidate in evaluation.deterministic:
+        triggered.append((candidate, 1.0, None))
 
-    for definition in evaluation.probabilistic:
+    for candidate in evaluation.probabilistic:
+        definition = candidate.definition
         draw = _stable_draw(rng_seed, game_date, slot_index, definition.event_id, "trigger")
         if draw < definition.base_probability:
-            triggered.append((definition, definition.base_probability, None))
+            triggered.append((candidate, definition.base_probability, None))
 
     if evaluation.llm_assisted and soft_judgment is not None and soft_judgment.should_trigger_any:
         scores = {s.event_id: s for s in soft_judgment.scores}
-        for definition in evaluation.llm_assisted:
+        for candidate in evaluation.llm_assisted:
+            definition = candidate.definition
             score = scores.get(definition.event_id)
             if score is None:
                 continue  # 未推荐 → 不通过
@@ -430,18 +416,23 @@ def finalize_event_selection(
             effective = _llm_effective_probability(definition.base_probability, relevance)
             draw = _stable_draw(rng_seed, game_date, slot_index, definition.event_id, "trigger")
             if draw < effective:
-                triggered.append((definition, effective, relevance))
+                triggered.append((candidate, effective, relevance))
 
     if not triggered:
         return None
 
-    max_priority = max(definition.priority for definition, _, _ in triggered)
-    top = [(d, p, rel) for d, p, rel in triggered if d.priority == max_priority]
+    max_priority = max(candidate.definition.priority for candidate, _, _ in triggered)
+    top = [
+        (candidate, probability, relevance)
+        for candidate, probability, relevance in triggered
+        if candidate.definition.priority == max_priority
+    ]
     chosen = _weighted_pick(top, rng_seed, game_date, slot_index)
     if chosen is None:
         return None
 
-    definition, effective_probability, relevance = chosen
+    candidate, effective_probability, relevance = chosen
+    definition = candidate.definition
     return EventTriggerDecision(
         event_id=definition.event_id,
         category=definition.category,
@@ -455,23 +446,27 @@ def finalize_event_selection(
         triggered=True,
         slot_index=slot_index,
         game_date=game_date,
+        context_npc_id=candidate.context_npc_id,
     )
 
 
 def _weighted_pick(
-    candidates: List[Tuple[EventDefinition, float, Optional[float]]],
+    candidates: List[Tuple[EventCandidate, float, Optional[float]]],
     rng_seed: int,
     game_date: date,
     slot_index: int,
-) -> Optional[Tuple[EventDefinition, float, Optional[float]]]:
+) -> Optional[Tuple[EventCandidate, float, Optional[float]]]:
     """同 priority 候选之间的稳定 weighted selection（selection_weight）。"""
     if not candidates:
         return None
-    weights = [max(0.0, definition.selection_weight) for definition, _, _ in candidates]
+    weights = [
+        max(0.0, candidate.definition.selection_weight)
+        for candidate, _, _ in candidates
+    ]
     total = sum(weights)
     if total <= 0:
         return candidates[0]
-    joined = ",".join(definition.event_id for definition, _, _ in candidates)
+    joined = ",".join(candidate.definition.event_id for candidate, _, _ in candidates)
     draw = _stable_draw(rng_seed, game_date, slot_index, joined, "weighted") * total
     acc = 0.0
     for candidate, weight in zip(candidates, weights):
@@ -481,8 +476,6 @@ def _weighted_pick(
     return candidates[-1]
 
 
-# ---------------------------------------------------------------------------
-# 内置事件 Registry（Step 8A/8B 暂无正式事件内容，保持为空；未来在此登记定义）
-# ---------------------------------------------------------------------------
-
-EVENT_DEFINITIONS: Tuple[EventDefinition, ...] = ()
+# The canonical production tuple lives in core.events.registry.  Re-export it
+# here to preserve the established public import path used by Application.
+from core.events.registry import EVENT_DEFINITIONS

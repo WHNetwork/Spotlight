@@ -65,3 +65,4 @@ class EventTriggerDecision(BaseModel):
     triggered: bool
     slot_index: int
     game_date: date
+    context_npc_id: Optional[str] = None
