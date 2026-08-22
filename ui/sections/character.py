@@ -30,8 +30,8 @@ class CharacterMixin:
                 continue
             try:
                 state = self.storage.load_save(int(sid))
-                ch = state.character if isinstance(state.character, dict) else {}
-                for raw in [state.save_name, ch.get("艺名"), ch.get("本名")]:
+                p = state.player
+                for raw in [state.save_name, p.stage_name, p.name]:
                     key = self.normalize_character_name_key(raw)
                     if key:
                         keys.add(key)
@@ -1126,16 +1126,6 @@ class CharacterMixin:
 
             from core.initial_allocator import allocate_initial_state
             state = GameState()
-            state.save_name = self.character_save_name(normalized.data)
-            state.character = normalized.data
-            age = normalized.data.get("年龄")
-            try:
-                age = int(str(age).strip()) if age is not None else None
-            except Exception:
-                age = None
-            if age is not None:
-                state.time["age_years"] = age
-                state.time["age_months"] = age * 12
             allocate_initial_state(state, normalized.data)
             self.save_id = self.storage.create_save(state)
             self.state = state

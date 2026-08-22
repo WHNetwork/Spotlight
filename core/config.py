@@ -35,6 +35,11 @@ class AppConfig:
         self.mimo_pro_model = "mimo-v2.5-pro"
         self.mimo_custom_model = "mimo-v2.5-pro"
 
+        # GLM (Zhipu Open Platform) settings. OpenAI-compatible endpoint:
+        # https://open.bigmodel.cn/api/paas/v4/chat/completions
+        self.glm_base_url = "https://open.bigmodel.cn/api/paas/v4/"
+        self.glm_model = "glm-5.2"
+
         self.model_policy = "auto"
         self.timeout_seconds = 120
         self.load()
@@ -55,6 +60,9 @@ class AppConfig:
                 self.mimo_pro_model = data.get("mimo_pro_model", self.mimo_pro_model)
                 self.mimo_custom_model = data.get("mimo_custom_model", self.mimo_custom_model)
 
+                self.glm_base_url = data.get("glm_base_url", self.glm_base_url)
+                self.glm_model = data.get("glm_model", self.glm_model)
+
                 self.model_policy = data.get("model_policy", self.model_policy)
                 self.timeout_seconds = int(data.get("timeout_seconds", self.timeout_seconds))
             except Exception:
@@ -73,10 +81,12 @@ class AppConfig:
         mimo_flash_model: str | None = None,
         mimo_pro_model: str | None = None,
         mimo_custom_model: str | None = None,
+        glm_base_url: str | None = None,
+        glm_model: str | None = None,
     ) -> None:
         if provider is not None:
             provider = provider.strip().lower()
-            self.provider = provider if provider in {"deepseek", "mimo"} else "deepseek"
+            self.provider = provider if provider in {"deepseek", "mimo", "glm"} else "deepseek"
 
         if base_url is not None:
             self.base_url = base_url.strip() or self.base_url
@@ -99,6 +109,11 @@ class AppConfig:
         if mimo_custom_model is not None:
             self.mimo_custom_model = mimo_custom_model.strip() or self.mimo_custom_model
 
+        if glm_base_url is not None:
+            self.glm_base_url = glm_base_url.strip() or self.glm_base_url
+        if glm_model is not None:
+            self.glm_model = glm_model.strip() or self.glm_model
+
         self.timeout_seconds = int(timeout_seconds)
         CONFIG_PATH.write_text(json.dumps({
             "provider": self.provider,
@@ -110,15 +125,25 @@ class AppConfig:
             "mimo_flash_model": self.mimo_flash_model,
             "mimo_pro_model": self.mimo_pro_model,
             "mimo_custom_model": self.mimo_custom_model,
+            "glm_base_url": self.glm_base_url,
+            "glm_model": self.glm_model,
             "model_policy": self.model_policy,
             "timeout_seconds": self.timeout_seconds,
         }, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def provider_label(self) -> str:
-        return "Xiaomi MiMo" if self.provider == "mimo" else "DeepSeek"
+        if self.provider == "mimo":
+            return "Xiaomi MiMo"
+        if self.provider == "glm":
+            return "GLM"
+        return "DeepSeek"
 
     def active_base_url(self) -> str:
-        return self.mimo_base_url if self.provider == "mimo" else self.base_url
+        if self.provider == "mimo":
+            return self.mimo_base_url
+        if self.provider == "glm":
+            return self.glm_base_url
+        return self.base_url
 
     def model_for_tier(self, tier: str) -> str:
         if self.provider == "mimo":
@@ -204,7 +229,42 @@ class AppConfig:
             return fallback.read_text(encoding="utf-8").strip()
         return ""
 
+    # GLM (Zhipu Open Platform) API key.
+    def get_glm_api_key(self) -> str:
+        env_key = os.getenv("GLM_API_KEY") or os.getenv("ZHIPU_API_KEY")
+        if env_key:
+            return env_key
+        try:
+            if keyring is None:
+                return ""
+            return keyring.get_password(APP_NAME, "GLM_API_KEY") or ""
+        except Exception:
+            return ""
+
+    def set_glm_api_key(self, api_key: str) -> None:
+        api_key = api_key.strip()
+        if not api_key:
+            return
+        try:
+            if keyring is None:
+                raise RuntimeError("keyring unavailable")
+            keyring.set_password(APP_NAME, "GLM_API_KEY", api_key)
+        except Exception:
+            fallback = CONFIG_DIR / ".glm_api_key"
+            fallback.write_text(api_key, encoding="utf-8")
+
+    def get_glm_api_key_fallback(self) -> str:
+        key = self.get_glm_api_key()
+        if key:
+            return key
+        fallback = CONFIG_DIR / ".glm_api_key"
+        if fallback.exists():
+            return fallback.read_text(encoding="utf-8").strip()
+        return ""
+
     def get_active_api_key_fallback(self) -> str:
         if self.provider == "mimo":
             return self.get_mimo_api_key_fallback()
+        if self.provider == "glm":
+            return self.get_glm_api_key_fallback()
         return self.get_api_key_fallback()

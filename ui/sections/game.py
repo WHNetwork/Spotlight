@@ -72,20 +72,20 @@ class GameMixin:
             except Exception:
                 logger.exception("load save preview failed")
 
-            ch = state.character if state is not None and isinstance(state.character, dict) else {}
-            name = (ch.get("艺名") or ch.get("本名") or item.get("name") or f"存档 {sid}")
-            stage = state.current_stage if state is not None else "未知阶段"
-            mainline = state.current_mainline if state is not None else "暂无主线"
-            schedule = state.current_schedule if state is not None else "暂无行程"
+            p = state.player if state is not None else None
+            name = (p.stage_name or p.name or item.get("name") or f"存档 {sid}") if p is not None else (item.get("name") or f"存档 {sid}")
+            stage = self.stage_label(state)
+            mainline = f"练习生第 {state.time.trainee_day} 天" if state is not None else "暂无主线"
+            schedule = f"当前日期 {state.time.current_date}" if state is not None else "暂无行程"
             turn = self.completed_turn_count(state) if state is not None else 0
             age_text = self.age_status_text(state) if state is not None else "年龄未知"
             company_size = "未知公司"
-            if state is not None and isinstance(state.company, dict):
-                company_size = str(state.company.get("公司规模") or "未知公司")
+            if state is not None:
+                company_size = str(state.company.size or "未知公司")
             updated_at = str(item.get("updated_at") or "")
             created_at = str(item.get("created_at") or "")
             time_label = updated_at or created_at or "未知时间"
-            nationality = str(ch.get("国籍") or "")
+            nationality = p.nationality if p is not None else ""
             card_w = max(r(330), min(r(410), int((vw - r(96)) / 3))) if vw >= 1120 else max(r(330), min(r(440), vw - r(56)))
 
             return ft.Container(
@@ -111,7 +111,7 @@ class GameMixin:
                             padding=r(3),
                             bgcolor=ft.Colors.with_opacity(0.50, "#F7ECEE"),
                             border=ft.Border.all(1, ft.Colors.with_opacity(0.68, ft.Colors.WHITE)),
-                            content=ft.Image(src=avatar_src_from_character(ch), fit="cover", border_radius=r(23)),
+                            content=ft.Image(src=self.avatar_src_for_player(p), fit="cover", border_radius=r(23)),
                         ),
                         ft.Column([
                             ft.Text(str(name), size=r(18), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN, max_lines=1),
@@ -348,17 +348,13 @@ class GameMixin:
             ], width=bar_w, height=7),
         ], spacing=4)
 
-    def relationship_card(self, name: str, rel: Dict[str, Any]) -> ft.Container:
-        s = self.state
-        role = str(rel.get("role") or "剧情人物")
+    def relationship_card(self, name: str, rel) -> ft.Container:
         metrics = [
-            self.relationship_metric_bar("友情", rel.get("friendship"), C["jade"]),
-            self.relationship_metric_bar("信任", rel.get("trust"), C["celadon"]),
-            self.relationship_metric_bar("竞争", rel.get("rivalry"), C["apricot"], danger_high=True),
-            self.relationship_metric_bar("边界", rel.get("boundary_clarity"), C["lavender"]),
-            self.relationship_metric_bar("误读风险", rel.get("relationship_risk"), C["rouge"], danger_high=True),
+            self.relationship_metric_bar("熟悉度", rel.familiarity, C["jade"]),
+            self.relationship_metric_bar("信任", rel.trust, C["celadon"]),
+            self.relationship_metric_bar("亲近", rel.closeness, C["lavender"]),
+            self.relationship_metric_bar("张力", rel.tension, C["apricot"], danger_high=True),
         ]
-        last_signals = [str(x) for x in list(rel.get("last_signals") or [])[-3:]]
         return ft.Container(
             padding=ft.Padding(left=10, right=10, top=10, bottom=10),
             border_radius=16,
@@ -369,11 +365,10 @@ class GameMixin:
                     ft.Container(icon_image("romance", 17, 0.88), width=25, height=25, border_radius=13, bgcolor=ft.Colors.with_opacity(0.22, C["lotus"]), alignment=ft.Alignment.CENTER),
                     ft.Column([
                         ft.Text(str(name), size=13, color=C["ink"], weight=ft.FontWeight.W_700, font_family=FONT_CN, max_lines=1),
-                        ft.Text(f"{role}", size=10, color=C["sub"], font_family=FONT_CN, max_lines=1),
+                        ft.Text(f"ID {rel.npc_id}", size=10, color=C["sub"], font_family=FONT_CN, max_lines=1),
                     ], spacing=0, expand=True),
                 ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 *metrics,
-                self.chip_wrap(last_signals, C["lotus"], "暂无最近关系信号"),
             ], spacing=8),
         )
 
@@ -386,19 +381,6 @@ class GameMixin:
             content=ft.Text(text, size=11, color=C["ink"], font_family=FONT_CN),
         )
 
-
-    def value_of(self, source: Dict[str, Any] | None, key: str, default=0):
-        if not isinstance(source, dict):
-            return default
-        return source.get(key, default)
-
-    def vget(self, source: Dict[str, Any] | None, *keys: str, default=0):
-        if not isinstance(source, dict):
-            return default
-        for key in keys:
-            if key in source:
-                return source.get(key)
-        return default
 
     def toggle_section(self, key: str) -> None:
         self.expanded_sections[key] = not self.expanded_sections.get(key, False)
@@ -458,35 +440,6 @@ class GameMixin:
             return str(event.get("severity") or "")
         return str(getattr(event, "severity", "") or "")
 
-    def player_debut_status(self, debut: Dict[str, Any] | None) -> str:
-        if not isinstance(debut, dict):
-            return "尚未开启"
-        raw = str(debut.get("last_result") or debut.get("status") or "")
-        mapping = {
-            "not_candidate": "尚未开启",
-            "not_ready": "继续准备",
-            "candidate_deferred": "候选延期",
-            "confirmed": "进入准备",
-            "未进入出道候选窗口": "继续准备",
-            "候选但延期": "候选延期",
-            "进入出道准备": "进入准备",
-        }
-        return mapping.get(raw, raw or "尚未开启")
-
-    def player_ending_status(self, ending: Dict[str, Any] | None, top_ending: Dict[str, Any] | None = None) -> str:
-        if isinstance(top_ending, dict) and top_ending.get("name"):
-            return str(top_ending.get("name"))
-        if not isinstance(ending, dict):
-            return "尚未开启"
-        raw = str(ending.get("window") or ending.get("status") or "")
-        mapping = {
-            "closed": "尚未开启",
-            "open": "正在形成",
-            "ongoing": "仍在路上",
-            "resolved": "阶段落定",
-        }
-        return mapping.get(raw, raw or "尚未开启")
-
     def turn_kind_label(self, kind: Any) -> str:
         text = str(kind or "")
         mapping = {
@@ -513,39 +466,49 @@ class GameMixin:
     def random_avatar_path(self) -> str:
         return f"avatars/avatar_{random.randint(1, 36):03d}.png"
 
+    def avatar_src_for_player(self, p=None) -> str:
+        if p is None:
+            p = self.state.player if self.state is not None else None
+        if p is None:
+            return asset("avatars/avatar_001.png")
+        avatar = str(getattr(p, "avatar", "") or "").strip()
+        if avatar and asset_exists(avatar):
+            return asset(avatar)
+        fallback = avatar_src_from_character({"艺名": p.stage_name, "本名": p.name})
+        try:
+            p.avatar = fallback
+        except Exception:
+            pass
+        return fallback
+
+    def weekday_label(self, t) -> str:
+        """真实星期（TimeState.weekday: 周一=0 … 周日=6）映射为中文标签。"""
+        try:
+            names = ["一", "二", "三", "四", "五", "六", "日"]
+            return f"周{names[t.weekday]}"
+        except Exception:
+            return ""
+
     def get_character_avatar_src(self) -> str:
-        if self.state is None:
-            return asset("avatars/avatar_001.png")
-        if not isinstance(self.state.character, dict):
-            return asset("avatars/avatar_001.png")
-        avatar = str(self.state.character.get("avatar") or "").strip()
-        if not avatar or not asset_exists(avatar):
-            avatar = avatar_src_from_character(self.state.character)
-            # Store the fallback path in memory so the same session does not flicker.
-            self.state.character["avatar"] = avatar
-        return asset(avatar)
+        return self.avatar_src_for_player(self.state.player if self.state is not None else None)
 
     def character_identity_card(self) -> ft.Container:
         s = self.state
         if s is None:
             return ft.Container()
-        ch = s.character if isinstance(s.character, dict) else {}
-        art_name = str(ch.get("艺名") or ch.get("本名") or s.save_name or "练习生")
-        real_name = str(ch.get("本名") or "").strip()
+        p = s.player
+        art_name = str(p.stage_name or p.name or s.save_name or "练习生")
+        real_name = str(p.name or "").strip()
         self.sync_runtime_context(s)
-        age_value = s.age_context.get("age")
-        age = f"{age_value}岁" if age_value is not None else str(ch.get("年龄") or "未知")
-        nationality = str(ch.get("国籍") or "未填写")
-        identity = str(ch.get("身份") or "练习生")
-        mbti = str(ch.get("MBTI") or "未设定")
+        age_value = self.player_age(s)
+        age = f"{age_value}岁" if age_value is not None else "未知"
+        nationality = str(p.nationality or "未填写")
+        identity = str(p.identity_source or "练习生")
+        mbti = str(p.mbti or "未设定")
         group_name = self.display_group_name(s)
-        mainline = str(s.current_mainline or "日常推进")
-        exam_countdown = "考核未知"
-        try:
-            if isinstance(s.time, dict):
-                exam_countdown = f"考核 {s.time.get('next_evaluation_days', s.time.get('assessment_countdown_days', '未知'))} 天"
-        except Exception:
-            pass
+        t = s.time
+        mainline = f"练习生第 {t.trainee_day} 天 · {self.weekday_label(t)}"
+        month_note = "月末" if t.is_month_end else f"距月末 {t.days_until_month_end} 天"
 
         card_width = max(520, min(640, int((self.page.width or 1320) * 0.46)))
         return ft.Container(
@@ -597,7 +560,7 @@ class GameMixin:
                         max_lines=2,
                     ),
                     ft.Text(
-                        f"{s.current_stage} · {self.turn_status_text(s)} · {exam_countdown} · {mainline}",
+                        f"{s.time.current_date} · {self.turn_status_text(s)} · {month_note} · {mainline}",
                         size=11,
                         color=C["dai"],
                         font_family=FONT_CN,
@@ -619,32 +582,20 @@ class GameMixin:
         alerts: list[Dict[str, str]] = []
         seen: set[str] = set()
 
-        def add(title: str, detail: str, level: str = "warning", icon_name: str = "crisis_pr"):
+        def add(title: str, detail: str, level: str = "warning", icon_name: str = "health"):
             title = (title or "").strip()
             if not title or title in seen:
                 return
             seen.add(title)
             alerts.append({"title": title, "detail": detail or "需要优先处理。", "level": level, "icon": icon_name})
 
-        for c in getattr(s, "active_crises", []) or []:
-            stage = str(getattr(c, "stage", ""))
-            if stage not in {"closed", "converted"}:
-                add(str(getattr(c, "title", "重大事件窗口")), f"当前阶段：{stage}。处理不当会持续影响后续回合。", "crisis", "crisis_pr")
-
-        important_words = ["窗口", "危机", "考核", "到来", "强制", "警告", "私生", "跟踪", "骚扰", "霸凌", "边界", "曝光", "伤病", "回应"]
-        for ev in list(getattr(s, "system_events", []) or [])[-12:]:
-            if self.is_hidden_system_event(ev):
-                continue
-            title = self.event_to_title(ev)
-            sev = self.event_to_severity(ev)
-            if sev in {"crisis", "warning"} or any(w in title for w in important_words):
-                icon_name = "safety" if any(w in title for w in ["私生", "跟踪", "骚扰", "霸凌", "安全"]) else "crisis_pr"
-                add(title, "这是系统保留提示，不会被折叠。", "crisis" if sev == "crisis" else "warning", icon_name)
-
-        for flag in list(getattr(s, "flags", []) or [])[-20:]:
-            flag_text = str(flag)
-            if any(w in flag_text for w in important_words):
-                add(flag_text, "长期记录中存在需要关注的风险或窗口。", "warning", "diary")
+        for cond in list(getattr(s.condition, "active_conditions", []) or []):
+            add(
+                str(getattr(cond, "type", "身体问题")),
+                f"严重度 {getattr(cond, 'severity', 0)}，开始于 {getattr(cond, 'started_on', '')}。",
+                "crisis" if getattr(cond, "severity", 0) >= 60 else "warning",
+                "health",
+            )
 
         return alerts[:12]
 
@@ -1097,12 +1048,6 @@ class GameMixin:
             self.submit_button.text = "生成中……" if value else "提交行动"
         if self.custom_input is not None:
             self.custom_input.disabled = value
-        for control in getattr(self, "weekly_plan_controls", []) or []:
-            try:
-                control.disabled = value
-                control.opacity = 0.55 if value else 1
-            except Exception:
-                pass
         self.page.update()
 
     def show_game(self, initial: bool = False) -> None:
@@ -1118,7 +1063,6 @@ class GameMixin:
         inner_panel_width = max(320, panel_width - 28)
         self.is_generating = False
         self.choice_buttons = []
-        self.weekly_plan_controls = []
         self.story_view = ft.Column(expand=True, spacing=16)
         self.left_panel = ft.Column(width=inner_panel_width, scroll=ft.ScrollMode.AUTO, spacing=12)
         self.right_panel = ft.Column(width=inner_panel_width, scroll=ft.ScrollMode.AUTO, spacing=12)
@@ -1136,16 +1080,14 @@ class GameMixin:
             focused_border_color=C["lavender"],
             text_style=ft.TextStyle(font_family=FONT_CN, color=C["ink"], size=14),
         )
-        first_text = "角色创建完成。练习室的灯已经亮起，你可以从下方选择第一步。" if initial or self.state.turn == 0 else self.fallback_story_text(getattr(self.state, "last_public_summary", "存档已载入。"))
-        if initial or self.state.turn == 0:
+        first_text = "角色创建完成。练习室的灯已经亮起，你可以从下方选择第一步。" if initial or self.state.meta.turn_index == 0 else self.fallback_story_text(getattr(self.state, "last_public_summary", "存档已载入。"))
+        if initial or self.state.meta.turn_index == 0:
             self.set_story_pair(first_text)
         else:
             if not self.render_recent_turns(limit=1):
                 self.set_story_pair(first_text)
         self.refresh_panels()
         self.refresh_choices()
-
-        route = self.state.route_history[-1] if self.state.route_history else None
 
         def top_nav_button(label: str, icon_name: str, handler, active: bool = False):
             return ft.Container(
@@ -1184,7 +1126,7 @@ class GameMixin:
                         ft.Text("星光练习室", size=22, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
                         ft.Text("Starlight Practice Room", size=11, italic=True, color=C["lavender"], font_family=FONT_EN),
                     ], spacing=0),
-                    self.mini_chip(f"{route.turn_kind if route else '准备中'}", C["lotus"]),
+                    self.mini_chip("练习生", C["lotus"]),
                 ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ft.Container(expand=True),
                 self.character_identity_card(),
@@ -1238,208 +1180,132 @@ class GameMixin:
         self.right_panel.controls.clear()
         self.refresh_pinned_alerts()
 
-        body = s.body or {}
-        mind = s.mind or {}
-        career = s.career or {}
-        company = s.company or {}
-        team = s.team or {}
-        risks = s.risks or {}
-        talents = getattr(s, "talents", {}) or {}
-        abilities = list(getattr(s, "abilities", []) or [])
-        route = s.route_history[-1] if s.route_history else None
+        t = s.time
+        p = s.player
+        c = s.condition
+        age = self.player_age(s)
+        adult_label = "未成年" if age is not None and age < 18 else "成年"
 
-        adult_label = "未成年" if s.age_context.get("is_minor") else "成年"
-        guardian_label = "需要监护沟通" if s.age_context.get("guardian_required") else "无特殊监护限制"
         overview_children = [
             self.text_line("当前回合", f"第 {self.current_turn_number(s)} 回合", "schedule", C["lotus"]),
             self.text_line("已完成", f"{self.completed_turn_count(s)} 回合", "schedule", C["lotus"]),
-            self.text_line("阶段", s.current_stage, "stage", C["lavender"]),
-            self.text_line("主线", s.current_mainline, "diary", C["jade"]),
-            self.text_line("行程", s.current_schedule, "calendar" if False else "schedule", C["apricot"]),
-            self.text_line("日期", s.time.get("current_date"), "schedule", C["jade"]),
-            self.text_line("本回合推进", f"{s.time.get('turn_duration_days')} 天", "schedule", C["lotus"]),
+            self.text_line("练习生第", f"{t.trainee_day} 天", "stage", C["lavender"]),
+            self.text_line("当前日期", t.current_date.isoformat(), "schedule", C["jade"]),
+            self.text_line("星期", self.weekday_label(t), "schedule", C["jade"]),
+            self.text_line("月末", "今天是月末" if t.is_month_end else f"还有 {t.days_until_month_end} 天", "stage", C["apricot"]),
+            self.text_line("建档日期", t.created_date.isoformat(), "diary", C["lotus"]),
             self.text_line("年龄", self.age_status_text(s), "new_character", C["lavender"]),
             self.text_line("年龄状态", adult_label, "new_character", C["lotus"]),
-            self.text_line("监护限制", guardian_label, "safety", C["apricot"]),
-            self.text_line("考核倒计时", f"{s.time.get('next_evaluation_days')} 天", "stage", C["apricot"]),
         ]
 
-        schedule_profile = getattr(s, "schedule_profile", {}) or {}
-        current_profile = schedule_profile.get("current_profile", {}) or {}
-        schedule_children = [
-            self.text_line("当前节奏", schedule_profile.get("stage_mode", "trainee"), "schedule", C["lotus"]),
-            self.metric_bar("训练空缺", schedule_profile.get("practice_quota_need", 0), "training", C["rouge"], danger_high=True),
-            self.metric_bar("行程负荷", schedule_profile.get("workload_pressure", 0), "schedule", C["apricot"], danger_high=True),
-            self.chip_wrap([f"{k} {v}%" for k, v in list(current_profile.items())], C["jade"], "暂无日程结构"),
+        skill_meta = [
+            ("dance", "舞蹈", "dance", C["jade"]),
+            ("vocal", "声乐", "vocal", C["lotus"]),
+            ("rap", "RAP", "rap", C["apricot"]),
+            ("stage", "舞台", "stage", C["lavender"]),
+            ("camera", "镜头", "camera", C["celadon"]),
+            ("language", "语言", "market", C["jade"]),
         ]
+        skill_children = []
+        for key, label, icon_name, color in skill_meta:
+            skill = getattr(s.skills, key)
+            skill_children.append(self.metric_bar(label, skill.value, icon_name, color))
+        skill_children.append(ft.Divider(color=ft.Colors.with_opacity(0.28, C["line"])))
+        skill_children.append(ft.Text("手感", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN))
+        for key, label, _, color in skill_meta:
+            skill = getattr(s.skills, key)
+            skill_children.append(self.metric_bar(f"{label}手感", skill.proficiency, "training", color))
+        skill_children.append(ft.Divider(color=ft.Colors.with_opacity(0.28, C["line"])))
+        skill_children.append(ft.Text("潜在路线", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN))
+        skill_children.append(self.chip_wrap(["演技（未解锁）", "创作（未解锁）"], C["apricot"], "暂无隐藏路线"))
+        if s.skills.traits:
+            skill_children.append(ft.Divider(color=ft.Colors.with_opacity(0.28, C["line"])))
+            skill_children.append(ft.Text("特殊特质", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN))
+            skill_children.append(self.chip_wrap([str(x.trait_id) for x in s.skills.traits], C["jade"], "尚未获得任何特质"))
 
         body_children = [
-            self.metric_bar("体力", body.get("体力"), "health", C["jade"]),
-            self.metric_bar("睡眠质量", body.get("睡眠质量"), "schedule", C["celadon"]),
-            self.metric_bar("免疫状态", body.get("免疫状态"), "health", C["jade"]),
-            self.metric_bar("肌肉疲劳", body.get("肌肉疲劳"), "training", C["apricot"], danger_high=True),
-            self.metric_bar("伤病风险", body.get("伤病风险"), "safety", C["rouge"], danger_high=True),
-            self.metric_bar("旧伤负担", body.get("旧伤负担"), "health", C["rouge"], danger_high=True),
-            self.metric_bar("嗓音状态", body.get("嗓音状态"), "vocal", C["jade"]),
-            self.metric_bar("饮食稳定度", body.get("饮食稳定度"), "family", C["celadon"]),
-            self.metric_bar("体重管理压力", body.get("体重管理压力"), "staff_boundary", C["rouge"], danger_high=True),
+            self.metric_bar("体力", c.energy, "health", C["jade"]),
+            self.metric_bar("睡眠状态", c.sleep_condition, "schedule", C["celadon"]),
+            self.metric_bar("嗓音状态", c.voice_condition, "vocal", C["jade"]),
+            self.metric_bar("肌肉疲劳", c.muscle_fatigue, "training", C["apricot"], danger_high=True),
+            self.metric_bar("伤病风险", c.injury_risk, "safety", C["rouge"], danger_high=True),
         ]
+        if c.active_conditions:
+            body_children.append(ft.Divider(color=ft.Colors.with_opacity(0.28, C["line"])))
+            body_children.append(ft.Text("已发生的身体问题", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN))
+            for cond in c.active_conditions:
+                resolved = "（已恢复）" if cond.resolved_on else ""
+                body_children.append(self.text_line(cond.type, f"严重度 {cond.severity}{resolved}", "health", C["rouge"]))
+        else:
+            body_children.append(ft.Text("当前没有已发生的身体问题。伤病风险只是风险，不代表已经受伤。", size=11, color=C["sub"], font_family=FONT_CN))
 
         mind_children = [
-            self.metric_bar("心情", mind.get("心情"), "diary", C["lotus"]),
-            self.metric_bar("精神压力", mind.get("精神压力"), "crisis_pr", C["rouge"], danger_high=True),
-            self.metric_bar("孤独感", mind.get("孤独感"), "family", C["apricot"], danger_high=True),
-            self.metric_bar("职业倦怠", mind.get("职业倦怠"), "schedule", C["rouge"], danger_high=True),
-            self.metric_bar("自我认同", mind.get("自我认同"), "app_logo", C["lavender"]),
-            self.metric_bar("边界感", mind.get("边界感"), "staff_boundary", C["jade"]),
+            self.metric_bar("心情", c.mood, "diary", C["lotus"]),
+            self.metric_bar("自信", c.confidence, "app_logo", C["lavender"]),
+            self.metric_bar("精神压力", c.stress, "crisis_pr", C["rouge"], danger_high=True),
         ]
 
-        career_children = [
-            self.metric_bar("舞蹈实力", career.get("舞蹈实力"), "dance", C["jade"]),
-            self.metric_bar("声乐实力", career.get("声乐实力"), "vocal", C["lotus"]),
-            self.metric_bar("RAP能力", career.get("RAP能力"), "rap", C["apricot"]),
-            self.metric_bar("舞台感染力", career.get("舞台感染力"), "stage", C["lavender"]),
-            self.metric_bar("综艺感", career.get("综艺感"), "fans", C["celadon"]),
-            self.metric_bar("语言能力", career.get("语言能力"), "market", C["jade"]),
-            self.metric_bar("形象指数", career.get("形象指数"), "camera", C["lotus"]),
-            self.metric_bar("演技潜力", career.get("演技潜力"), "stage", C["apricot"]),
-            self.metric_bar("创作能力", career.get("创作能力"), "music", C["lavender"]),
-            self.metric_bar("制作人能力", career.get("制作人能力"), "comeback", C["jade"]),
-            ft.Divider(color=ft.Colors.with_opacity(0.28, C["line"])),
-            ft.Text("练习积累", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
-            self.text_line("舞蹈", f"{s.progression.get('skill_xp', {}).get('dance', 0)} xp", "dance", C["jade"]),
-            self.text_line("声乐", f"{s.progression.get('skill_xp', {}).get('vocal', 0)} xp", "vocal", C["lotus"]),
-            self.text_line("舞台", f"{s.progression.get('skill_xp', {}).get('stage', 0)} xp", "stage", C["lavender"]),
-            self.text_line("创作", f"{s.progression.get('skill_xp', {}).get('creative', 0)} xp", "music", C["apricot"]),
-            
-        ]
-
-        talent_children = []
-        for key in ["舞蹈天赋", "声乐天赋", "RAP天赋", "镜头天赋", "综艺天赋", "语言天赋", "演技天赋", "创作天赋", "抗压天赋"]:
-            talent_children.append(self.metric_bar(key, talents.get(key), "app_logo", C["lotus"]))
-        talent_children.append(self.text_line("已解锁能力", f"{len(abilities)} 个", "app_logo", C["jade"]))
-        talent_children.append(self.chip_wrap(abilities, C["lavender"], "尚未解锁能力"))
-
-        if not s.period.get("enabled", False) or s.period.get("mode") == "关闭":
-            period_children = [
-                self.text_line("系统状态", "已关闭", "period", C["lotus"]),
-                ft.Text("该存档不会推进生理周期，也不会触发生理期事件。", size=11, color=C["sub"], font_family=FONT_CN),
-                
-            ]
-            period_summary = "已关闭"
-        else:
-            period_children = [
-                self.text_line("周期阶段", f"{s.period.get('phase')} · Day {s.period.get('cycle_day')}", "period", C["lotus"]),
-                self.metric_bar("痛感", s.period.get("pain_level"), "period", C["rouge"], danger_high=True),
-                self.metric_bar("经期压力", s.period.get("flow_pressure"), "period", C["apricot"], danger_high=True),
-                self.metric_bar("周期不规律风险", s.period.get("irregularity_risk"), "health", C["rouge"], danger_high=True),
-                self.text_line("应急用品", "有" if s.period.get("has_supplies") else "缺少", "safety", C["jade"]),
-                self.text_line("已告知经纪人", "是" if s.period.get("told_manager") else "否", "staff_boundary", C["lotus"]),
-                self.text_line("已告知队友", "是" if s.period.get("told_teammate") else "否", "friendship", C["jade"]),
-                
-            ]
-            period_summary = f"{s.period.get('phase')} / Day {s.period.get('cycle_day')} / 痛感 {s.period.get('pain_level')}"
-
-        social_children = [
-            self.text_line("国籍", s.social_context.get("nationality"), "market", C["jade"]),
-            self.metric_bar("语言压力", s.social_context.get("language_barrier"), "market", C["apricot"], danger_high=True),
-            self.metric_bar("文化适应", s.social_context.get("cultural_adaptation"), "hierarchy", C["jade"]),
-            self.metric_bar("签证压力", s.social_context.get("visa_pressure"), "contract", C["rouge"], danger_high=True),
-            self.metric_bar("学校出勤压力", s.school.get("attendance_pressure"), "school", C["rouge"], danger_high=True),
-            self.metric_bar("考试压力", s.school.get("exam_pressure"), "school", C["apricot"], danger_high=True),
-            self.metric_bar("作业压力", s.school.get("homework_pressure"), "school", C["apricot"], danger_high=True),
-            self.metric_bar("家庭支持", s.family.get("emotional_support"), "family", C["jade"]),
-            self.metric_bar("家庭冲突", s.family.get("conflict_level"), "family", C["rouge"], danger_high=True),
-            self.metric_bar("控制欲", s.family.get("control_level"), "family", C["apricot"], danger_high=True),
-            self.metric_bar("敬语适应", s.hierarchy.get("honorific_adaptation"), "hierarchy", C["jade"]),
-            self.metric_bar("礼仪压力", s.hierarchy.get("etiquette_pressure"), "hierarchy", C["rouge"], danger_high=True),
-        ]
-
-        life_context_children = [
-            ft.Text("生理周期", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
-            *period_children,
-            ft.Divider(color=ft.Colors.with_opacity(0.28, C["line"])),
-            ft.Text("社会环境", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
-            *social_children,
+        tr = s.trainee
+        trainee_children = [
+            self.text_line("身份状态", "正式练习生" if tr.status == "active" else str(tr.status), "contract", C["jade"]),
+            self.text_line("入社日期", tr.joined_date.isoformat(), "diary", C["lotus"]),
+            self.text_line("训练等级", f"Lv.{tr.training_level}", "stage", C["lavender"]),
+            self.metric_bar("公司评价", tr.company_evaluation, "contract", C["jade"]),
+            self.metric_bar("出勤", tr.attendance, "schedule", C["celadon"]),
+            self.metric_bar("纪律", tr.discipline, "training", C["apricot"]),
+            self.metric_bar("老师印象", tr.teacher_impression, "stage", C["lotus"]),
         ]
 
         self.left_panel.controls.extend([
-            self.foldout_section("overview", "new_character", "角色总览", f"{s.character.get('艺名') or s.save_name} · {self.display_group_name(s)}", overview_children, True),
-            self.foldout_section("schedule_profile", "schedule", "阶段日程", f"{schedule_profile.get('stage_mode', 'trainee')} / 训练缺口 {schedule_profile.get('practice_quota_need', 0)}", schedule_children, False),
-            self.foldout_section("body", "health", "身体状态", f"体力 {body.get('体力')} / 伤病 {body.get('伤病风险')} / 嗓音 {body.get('嗓音状态')}", body_children, True),
-            self.foldout_section("mind", "diary", "心理状态", f"心情 {mind.get('心情')} / 压力 {mind.get('精神压力')} / 孤独 {mind.get('孤独感')}", mind_children, True),
-            self.foldout_section("career", "stage", "职业属性", f"舞 {career.get('舞蹈实力')} / 声 {career.get('声乐实力')} / 创作 {career.get('创作能力')}", career_children, False),
-            self.foldout_section("talents", "app_logo", "天赋与能力", f"能力 {len(abilities)} 个 / 抗压天赋 {talents.get('抗压天赋')}", talent_children, False),
-            self.foldout_section("life_context", "period", "生理周期 / 社会环境", f"{period_summary} / 语言压力 {s.social_context.get('language_barrier')}", life_context_children, False),
+            self.foldout_section("overview", "new_character", "角色总览", f"{p.stage_name or s.save_name} · {self.display_group_name(s)}", overview_children, True),
+            self.foldout_section("skills", "stage", "技能", "舞蹈 / 声乐 / RAP / 舞台 / 镜头 / 语言", skill_children, True),
+            self.foldout_section("body", "health", "身体状态", f"体力 {c.energy} / 伤病风险 {c.injury_risk} / 嗓音 {c.voice_condition}", body_children, True),
+            self.foldout_section("mind", "diary", "心理状态", f"心情 {c.mood} / 压力 {c.stress} / 自信 {c.confidence}", mind_children, True),
+            self.foldout_section("trainee", "contract", "练习生身份", f"等级 Lv.{tr.training_level} / 公司评价 {tr.company_evaluation}", trainee_children, True),
         ])
 
+        company = s.company
+        w = company.training_weights
         company_children = [
-            self.text_line("公司规模", company.get("公司规模", "中型公司"), "contract", C["lavender"]),
-            self.text_line("公司路线", company.get("公司路线", "均衡培养"), "market", C["jade"]),
-            self.metric_bar("资源池", company.get("资源池", 50), "market", C["jade"]),
-            self.metric_bar("出道窗口压力", company.get("出道窗口压力", 45), "stage", C["apricot"], danger_high=True),
-            self.metric_bar("公司满意度", company.get("公司满意度"), "contract", C["jade"]),
-            self.metric_bar("公司信任度", company.get("公司信任度"), "staff_boundary", C["celadon"]),
-            self.metric_bar("主推指数", company.get("主推指数"), "stage", C["lavender"]),
-            self.metric_bar("资源倾斜度", company.get("资源倾斜度"), "market", C["jade"]),
-            self.metric_bar("危机关注度", company.get("危机关注度"), "crisis_pr", C["rouge"], danger_high=True),
-            self.metric_bar("合约稳定度", company.get("合约稳定度"), "contract", C["celadon"]),
-            self.metric_bar("个人议价权", company.get("个人议价权"), "contract", C["apricot"]),
-            self.metric_bar("续约倾向", company.get("续约倾向"), "contract", C["jade"]),
+            self.text_line("公司名称", company.name or "未填写", "contract", C["lavender"]),
+            self.text_line("公司规模", company.size, "contract", C["jade"]),
+            self.text_line("培养路线", company.training_style, "market", C["jade"]),
+            self.text_line("管理风格", company.management_style or "待定义", "contract", C["lotus"]),
+            self.metric_bar("训练强度", company.training_intensity, "training", C["apricot"], danger_high=True),
+            self.metric_bar("资源水平", company.resource_level, "market", C["jade"]),
+            ft.Divider(color=ft.Colors.with_opacity(0.28, C["line"])),
+            ft.Text("培养权重", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
+            self.metric_bar("舞蹈", int(w.dance * 100), "dance", C["jade"]),
+            self.metric_bar("声乐", int(w.vocal * 100), "vocal", C["lotus"]),
+            self.metric_bar("RAP", int(w.rap * 100), "rap", C["apricot"]),
+            self.metric_bar("舞台", int(w.stage * 100), "stage", C["lavender"]),
+            self.metric_bar("镜头", int(w.camera * 100), "camera", C["celadon"]),
+            self.metric_bar("语言", int(w.language * 100), "market", C["jade"]),
+            self.metric_bar("体能", int(w.fitness * 100), "health", C["jade"]),
         ]
-        team_children = [
-            self.metric_bar("团队默契", self.vget(team, "团队默契度", "团队默契"), "friendship", C["jade"]),
-            self.metric_bar("队内信任度", team.get("队内信任度"), "friendship", C["celadon"]),
-            self.metric_bar("队内竞争度", team.get("队内竞争度"), "stage", C["apricot"], danger_high=True),
-            self.metric_bar("队内资源平衡", team.get("队内资源平衡"), "market", C["jade"]),
-            self.metric_bar("镜头/part矛盾", self.vget(team, "镜头/part矛盾", "镜头前和谐度"), "camera", C["rouge"], danger_high=True),
-            self.metric_bar("真实关系温度", team.get("真实关系温度"), "friendship", C["lotus"]),
-            self.metric_bar("宿舍安全感", team.get("宿舍安全感"), "safety", C["jade"]),
-            self.metric_bar("营业疲劳", team.get("营业疲劳"), "camera", C["rouge"], danger_high=True),
-        ]
-        risk_children = [
-            self.metric_bar("恋爱风险", risks.get("恋爱风险"), "romance", C["rouge"], danger_high=True),
-            self.metric_bar("私生风险", risks.get("私生风险"), "safety", C["rouge"], danger_high=True),
-            self.metric_bar("行程泄露风险", risks.get("行程泄露风险"), "camera", C["rouge"], danger_high=True),
-            self.metric_bar("性骚扰风险", risks.get("性骚扰风险"), "staff_boundary", C["rouge"], danger_high=True),
-            self.metric_bar("霸凌排挤风险", risks.get("霸凌排挤风险"), "friendship", C["rouge"], danger_high=True),
-            self.metric_bar("队内不和曝光风险", risks.get("队内不和曝光风险"), "crisis_pr", C["rouge"], danger_high=True),
-            self.metric_bar("伤病爆发风险", risks.get("伤病爆发风险"), "health", C["rouge"], danger_high=True),
-            self.metric_bar("公关危机风险", risks.get("公关危机风险"), "crisis_pr", C["rouge"], danger_high=True),
-        ]
+
         relationship_children = [
             self.relationship_card(name, rel)
             for name, rel in list(s.relationships.items())[:16]
-        ] or [ft.Text("暂无已解锁人物。新人物出现在剧情或 NPC 反应里后，才会建立个人关系档案。", size=12, color=C["sub"], font_family=FONT_CN)]
+        ] or [ft.Text("暂无关系记录。关系事件会在后续版本写入关系结果。", size=12, color=C["sub"], font_family=FONT_CN)]
 
-        crisis_children = []
-        if route:
-            crisis_children.append(self.text_line("服务商", self.config.provider_label(), "api", C["jade"]))
-            crisis_children.append(self.text_line("叙事模式", self.config.model_policy, "api", C["jade"]))
-            crisis_children.append(self.text_line("当前线路", route.actual_model, "api", C["lotus"]))
-            crisis_children.append(self.text_line("最近状态", route.turn_kind, "schedule", C["apricot"]))
-            crisis_children.append(ft.Divider(color=ft.Colors.with_opacity(0.35, C["line"])))
-        active_crises = [c for c in (getattr(s, "active_crises", []) or []) if getattr(c, "stage", "") not in {"closed", "converted"}]
-        if active_crises:
-            for c in active_crises:
-                crisis_children.append(ft.Text(f"• {c.title} / {c.stage}", size=12, color=C["rouge"], font_family=FONT_CN))
-        else:
-            crisis_children.append(ft.Text("当前没有打开的重大危机窗口。", size=12, color=C["sub"], font_family=FONT_CN))
-        crisis_children.append(ft.Divider(color=ft.Colors.with_opacity(0.35, C["line"])))
-        crisis_children.append(ft.Text("长期记录", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN))
-        crisis_children.append(self.chip_wrap([str(x) for x in list(getattr(s, "flags", []) or [])[-16:]], C["lotus"], "暂无长期 Flag"))
-        crisis_children.append(ft.Text("已解决记录", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN))
-        crisis_children.append(self.chip_wrap([str(x) for x in list(getattr(s, "resolved_flags", []) or [])[-10:]], C["jade"], "暂无已解决 Flag"))
-        crisis_children.append(ft.Text("重大事件", size=12, weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN))
-        crisis_children.append(self.chip_wrap([str(x) for x in list(getattr(s, "major_events", []) or [])[-10:]], C["apricot"], "暂无重大事件记录"))
+        day_children = [
+            self.text_line("时间格数量", "待实现（下一步：1 天 = 8 个 3 小时格）", "schedule", C["lotus"]),
+            self.text_line("当前格子", "无" if s.day.current_slot is None else str(s.day.current_slot), "schedule", C["jade"]),
+            self.text_line("已完成格子", f"{len(s.day.completed_slots)} 个", "schedule", C["celadon"]),
+            self.text_line("今日安排", f"{len(s.day.schedule)} 条", "schedule", C["apricot"]),
+            self.chip_wrap([str(x) for x in s.day.completed_slots], C["jade"], "今日尚未完成任何时间格"),
+        ]
 
         self.right_panel.controls.extend([
-            self.foldout_section("company", "contract", "公司与合约", f"{company.get('公司规模', '中型公司')} / 满意 {company.get('公司满意度')} / 资源池 {company.get('资源池', 50)}", company_children, True),
-            self.foldout_section("team", "friendship", "团队关系", f"默契 {team.get('团队默契')} / 信任 {team.get('队内信任度')} / 疲劳 {team.get('营业疲劳')}", team_children, True),
-            self.foldout_section("risks", "safety", "风险系统", f"恋爱 {risks.get('恋爱风险')} / 私生 {risks.get('私生风险')} / 公关 {risks.get('公关危机风险')}", risk_children, True),
+            self.foldout_section("company", "contract", "公司与培养", f"{company.size} / 资源 {company.resource_level}", company_children, True),
             self.foldout_section("relationships", "romance", "关系状态", f"记录 {len(s.relationships)} 人", relationship_children, False),
-            self.foldout_section("crisis_flags", "crisis_pr", "危机与长期记录", f"活跃危机 {len(active_crises)} / Flag {len(getattr(s, 'flags', []) or [])}", crisis_children, True),
+            self.foldout_section("day", "schedule", "今日日程", "时间格系统待实现", day_children, True),
         ])
+
+    def refresh_choices(self) -> None:
+        """回合引擎重构中：当前不渲染行动选项，仅保留自定义输入。"""
+        self.choice_row.controls.clear()
 
     def choice_card(self, choice: Choice):
         card = ft.ElevatedButton(

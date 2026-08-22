@@ -1,34 +1,65 @@
 from __future__ import annotations
 
-import hashlib
-from typing import Any, Dict, List, Tuple
+import random
 import re
+import secrets
+from typing import Any, Dict, List
 
-from core.models import GameState
-
-
-TALENT_KEYS = [
-    "舞蹈天赋", "声乐天赋", "RAP天赋", "镜头天赋", "综艺天赋",
-    "语言天赋", "演技天赋", "创作天赋", "体能天赋", "抗压天赋", "社交天赋"
-]
-
-
-def _talent_stable_int(seed: str, low: int = 35, high: int = 75) -> int:
-    h = hashlib.sha256(seed.encode("utf-8")).hexdigest()
-    val = int(h[:8], 16)
-    return low + (val % (high - low + 1))
+from core.models import (
+    CompanySize,
+    GameState,
+)
+from core.company_curriculum import TRAINING_WEIGHTS_BY_STYLE
+from core.company_profile import derive_company_profile
+from core.menstrual_cycle import apply_daily_menstrual_physiology, initialize_menstrual_cycle
+from core.npc_initialization import initialize_npc_roster
 
 
-def generate_talents(character: Dict[str, object]) -> Dict[str, int]:
-    base_seed = "|".join(str(character.get(k, "")) for k in ["艺名", "本名", "身份", "特长", "弱项"])
-    talents = {k: _talent_stable_int(base_seed + k) for k in TALENT_KEYS}
+# 正式 Skill 的固定生成顺序：决定本地 PRNG 的随机数消耗顺序，
+# 保证同一 rng_seed 下初始化结果稳定、可重复。
+TALENT_SKILL_ORDER = (
+    "dance",
+    "vocal",
+    "rap",
+    "stage",
+    "camera",
+    "language",
+    "acting",
+    "creation",
+)
+
+# 创建表单中的背景修正键 → 正式技能名（仅用于一次性背景修正映射）。
+_BOOST_TO_SKILL = {
+    "舞蹈天赋": "dance",
+    "声乐天赋": "vocal",
+    "RAP天赋": "rap",
+    "镜头天赋": "camera",
+    "语言天赋": "language",
+    "演技天赋": "acting",
+    "创作天赋": "creation",
+}
+
+
+def generate_talents(rng_seed: int, character: Dict[str, object]) -> Dict[str, int]:
+    """生成新角色的一次性初始 Talent（与 8 个正式 Skill 一一对应）。
+
+    第一层：基础值由本地 random.Random(rng_seed) 按固定技能顺序
+    （TALENT_SKILL_ORDER）各生成一个 35–75 的独立随机数；
+    第二层：身份 / 特长 / 弱项等背景对初始 Talent 做一次性修正。
+
+    Talent 只在这里生成一次并写入 SkillState.talent，之后直接读取，
+    运行时不重新推导，也不根据角色资料决定任何随机 seed。
+    """
+    rng = random.Random(rng_seed)
+    talents: Dict[str, int] = {skill: rng.randint(35, 75) for skill in TALENT_SKILL_ORDER}
 
     identity = str(character.get("身份", ""))
     speciality = str(character.get("特长", ""))
     weakness = str(character.get("弱项", ""))
 
     def boost(key: str, amount: int) -> None:
-        talents[key] = max(0, min(100, talents[key] + amount))
+        skill = _BOOST_TO_SKILL[key]
+        talents[skill] = max(0, min(100, talents[skill] + amount))
 
     if "舞" in speciality:
         boost("舞蹈天赋", 12)
@@ -38,8 +69,6 @@ def generate_talents(character: Dict[str, object]) -> Dict[str, int]:
         boost("RAP天赋", 10)
     if "镜头" in speciality or "门面" in speciality:
         boost("镜头天赋", 8)
-    if "综艺" in speciality or "采访" in speciality:
-        boost("综艺天赋", 8)
     if "演技" in speciality or "表演" in speciality:
         boost("演技天赋", 8)
     if "作词" in speciality or "作曲" in speciality or "创作" in speciality:
@@ -53,7 +82,6 @@ def generate_talents(character: Dict[str, object]) -> Dict[str, int]:
         boost("语言天赋", -6)
 
     if "运动员" in identity:
-        boost("体能天赋", 15)
         boost("舞蹈天赋", 5)
     if "海外" in identity:
         boost("语言天赋", 10)
@@ -61,29 +89,15 @@ def generate_talents(character: Dict[str, object]) -> Dict[str, int]:
         boost("镜头天赋", 12)
         boost("演技天赋", 6)
     if "选秀" in identity:
-        boost("舞台感染力天赋" if "舞台感染力天赋" in talents else "镜头天赋", 8)
+        boost("镜头天赋", 8)
     if "网红" in identity:
         boost("镜头天赋", 8)
-        boost("综艺天赋", 6)
 
     return talents
 
 
-CAREER_KEYS = ["舞蹈实力", "声乐实力", "RAP能力", "舞台感染力", "综艺感", "语言能力", "演技潜力", "创作能力", "制作人能力"]
-
-
 def clamp(v: int, low: int = 0, high: int = 100) -> int:
     return max(low, min(high, int(v)))
-
-
-def add(d: Dict[str, int], key: str, delta: int, log: List[str], reason: str, cap: int | None = None) -> None:
-    old = d.get(key, 0)
-    new = old + delta
-    if cap is not None:
-        new = min(new, cap)
-    d[key] = clamp(new)
-    if delta != 0:
-        log.append(f"{key}: {old} → {d[key]}（{reason}）")
 
 
 def mbti_letters(character: Dict[str, Any]) -> tuple[str, str, str, str, str]:
@@ -93,74 +107,16 @@ def mbti_letters(character: Dict[str, Any]) -> tuple[str, str, str, str, str]:
     return code, code[0], code[1], code[2], code[3]
 
 
-def normalize_company_size(character: Dict[str, Any]) -> str:
+def normalize_company_size(character: Dict[str, Any]) -> CompanySize:
     raw = str(character.get("公司规模") or character.get("公司类型") or "").strip()
     identity = str(character.get("身份") or character.get("身份来源") or "")
     tags = " ".join(map(str, character.get("出身来源标签", []) or []))
     text = f"{raw} {identity} {tags}"
     if any(k in text for k in ["大型", "大公司", "头部", "四大", "TOP", "top"]):
-        return "大型公司"
+        return CompanySize.LARGE
     if any(k in text for k in ["小型", "小公司", "独立", "小厂"]):
-        return "小型公司"
-    return "中型公司"
-
-
-def apply_company_size_profile(state: GameState, character: Dict[str, Any], log: List[str]) -> None:
-    size = normalize_company_size(character)
-    profile = {
-        "大型公司": {
-            "公司路线": "高资源高竞争",
-            "资源池": 78,
-            "出道窗口压力": 70,
-            "公司满意度": 54,
-            "公司信任度": 48,
-            "主推指数": 38,
-            "资源倾斜度": 42,
-            "危机关注度": 18,
-            "合约稳定度": 78,
-            "个人议价权": 6,
-            "续约倾向": 54,
-        },
-        "中型公司": {
-            "公司路线": "均衡培养",
-            "资源池": 52,
-            "出道窗口压力": 48,
-            "公司满意度": 50,
-            "公司信任度": 45,
-            "主推指数": 35,
-            "资源倾斜度": 30,
-            "危机关注度": 10,
-            "合约稳定度": 70,
-            "个人议价权": 10,
-            "续约倾向": 50,
-        },
-        "小型公司": {
-            "公司路线": "低资源高自主",
-            "资源池": 28,
-            "出道窗口压力": 34,
-            "公司满意度": 46,
-            "公司信任度": 42,
-            "主推指数": 28,
-            "资源倾斜度": 18,
-            "危机关注度": 7,
-            "合约稳定度": 55,
-            "个人议价权": 18,
-            "续约倾向": 42,
-        },
-    }[size]
-    state.company["公司规模"] = size
-    for key, value in profile.items():
-        state.company[key] = value
-    if size == "大型公司":
-        state.team["队内竞争度"] = min(100, int(state.team.get("队内竞争度", 35)) + 8)
-        state.market["话题度"] = min(100, int(state.market.get("话题度", 15)) + 6)
-        log.append("大型公司：资源池更高、曝光和出道窗口更强，但队内竞争与危机关注同步上升。")
-    elif size == "小型公司":
-        state.market["销量潜力"] = max(0, int(state.market.get("销量潜力", 25)) - 5)
-        state.risks["公关危机风险"] = min(100, int(state.risks.get("公关危机风险", 5)) + 3)
-        log.append("小型公司：资源池更低、合约稳定度较弱，但个人议价权和自主空间更高。")
-    else:
-        log.append("中型公司：资源、竞争和风险保持均衡，公司规模会持续影响资源与出道节奏。")
+        return CompanySize.SMALL
+    return CompanySize.MEDIUM
 
 
 def parse_profile_tags(character: Dict[str, Any]) -> List[str]:
@@ -209,13 +165,11 @@ def parse_profile_tags(character: Dict[str, Any]) -> List[str]:
     if family:
         tags.append("家庭背景已设定")
 
-    # AI/规则匹配标签直接进入 profile_tags，供初始数值分配使用。
     for t in source_tags:
         text = str(t).strip()
         if text:
             tags.append(text)
 
-    # 去重保持顺序
     out = []
     for t in tags:
         if t not in out:
@@ -223,298 +177,259 @@ def parse_profile_tags(character: Dict[str, Any]) -> List[str]:
     return out
 
 
-def allocate_initial_state(state: GameState, character: Dict[str, Any]) -> None:
-    """Apply initial stats for a new character.
+def _parse_int(value: Any) -> int | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    m = re.search(r"\d+", text)
+    if not m:
+        return None
+    try:
+        return int(m.group())
+    except Exception:
+        return None
 
-    Career stats are intentionally low for trainee-stage games.
-    Talents may be high; current abilities are not.
+
+def apply_company_profile(state: GameState, character: Dict[str, Any], log: List[str]) -> None:
+    """由创建输入确定公司规模，其余画像由存档 rng_seed 确定性生成。
+
+    只有 resource_level 受 size 的范围约束（区间故意重叠）；
+    training_style / management_style / training_intensity 与规模完全无关。
+    training_weights 由 training_style 的官方基础模板确定（同一风格固定权重）。
+    """
+    size = normalize_company_size(character)
+    profile = derive_company_profile(size, state.meta.rng_seed)
+    state.company.name = str(character.get("公司") or "").strip()
+    state.company.size = size
+    state.company.training_style = profile.training_style
+    state.company.management_style = profile.management_style
+    state.company.training_intensity = profile.training_intensity
+    state.company.resource_level = profile.resource_level
+    state.company.training_weights = TRAINING_WEIGHTS_BY_STYLE[profile.training_style]
+    log.append(
+        f"公司画像：规模 {size.value}，培养风格 {profile.training_style.value}，"
+        f"管理风格 {profile.management_style.value}，训练强度 {profile.training_intensity}，"
+        f"资源水平 {profile.resource_level}。课程权重按培养风格基础模板确定。"
+    )
+
+
+def apply_skill_initial(state: GameState, character: Dict[str, Any], tags: List[str], log: List[str]) -> None:
+    talents = generate_talents(state.meta.rng_seed, character)
+
+    for key, skill in [
+        ("dance", state.skills.dance), ("vocal", state.skills.vocal),
+        ("rap", state.skills.rap), ("stage", state.skills.stage),
+        ("camera", state.skills.camera), ("language", state.skills.language),
+        ("acting", state.skills.acting), ("creation", state.skills.creation),
+    ]:
+        skill.talent = talents[key]
+        if key in {"acting", "creation"}:
+            skill.unlocked = False
+            skill.value = None
+            skill.form = None
+            log.append(f"{key}.talent = {skill.talent}（隐藏天赋，已生成，未解锁）")
+        else:
+            skill.unlocked = True
+
+    values: Dict[str, int] = {"dance": 5, "vocal": 5, "rap": 3, "stage": 4, "camera": 3, "language": 5}
+    cap = 15
+
+    def add_value(key: str, delta: int, reason: str) -> None:
+        values[key] = clamp(values[key] + delta, 0, cap)
+        if delta != 0:
+            log.append(f"skills.{key}.value：{values[key]}（{reason}）")
+
+    if "舞蹈基础" in tags:
+        add_value("dance", 5, "特长/经历包含舞蹈基础")
+        add_value("stage", 2, "舞蹈基础带来舞台感")
+    if "声乐基础" in tags:
+        add_value("vocal", 5, "特长/经历包含声乐基础")
+    if "RAP基础" in tags:
+        add_value("rap", 5, "特长/经历包含 RAP")
+    if "镜头优势" in tags or "视觉优势" in tags:
+        add_value("camera", 3, "外貌/镜头风格匹配带来镜头表现优势")
+        add_value("stage", 2, "镜头感支撑舞台表现")
+    if "综艺潜力" in tags:
+        add_value("camera", 5, "性格与反应方式具备综艺潜力")
+    if "校园演出经验" in tags:
+        add_value("stage", 2, "校园演出带来基础舞台适应")
+    if "舞台经验" in tags:
+        add_value("stage", 4, "既有舞台经验提升舞台稳定性")
+    if "选秀淘汰者" in tags:
+        add_value("stage", 5, "选秀经历带来镜头与舞台经验")
+        add_value("camera", 3, "选秀经历带来镜头表达经验")
+    if "再出道" in tags:
+        add_value("stage", 6, "再出道经历带来真实舞台经验")
+    if "海外练习生" in tags:
+        add_value("language", 4, "海外背景带来外语/跨文化优势")
+    if "前运动员" in tags:
+        add_value("dance", 3, "前运动员的身体控制迁移到舞蹈学习")
+        add_value("stage", 2, "竞技经历带来舞台承压经验")
+    if "训练适应快" in tags:
+        add_value("dance", 1, "训练适应较快")
+    if "优渥家庭" in tags:
+        add_value("vocal", 2, "优渥家庭可能带来早期课程资源")
+        add_value("language", 2, "优渥教育资源带来语言基础")
+
+    if "语言短板" in tags:
+        add_value("language", -2, "弱项包含语言")
+    if "舞蹈短板" in tags:
+        add_value("dance", -2, "弱项包含舞蹈")
+    if "声乐短板" in tags:
+        add_value("vocal", -2, "弱项包含声乐")
+
+    for key, skill in [
+        ("dance", state.skills.dance), ("vocal", state.skills.vocal),
+        ("rap", state.skills.rap), ("stage", state.skills.stage),
+        ("camera", state.skills.camera), ("language", state.skills.language),
+    ]:
+        skill.value = clamp(values[key], 0, cap)
+        skill.form = float(skill.value)
+        skill.xp = 0.0
+        skill.last_practiced_date = None
+        log.append(f"skills.{key}：value={skill.value}，form={skill.form}，unlocked=True")
+
+
+def apply_condition_initial(state: GameState, tags: List[str], log: List[str]) -> None:
+    c = state.condition
+    c.energy = 80
+    c.muscle_fatigue = 20
+    c.injury_risk = 15
+    c.voice_condition = 80
+    c.sleep_condition = 70
+    c.stress = 35
+    c.mood = 70
+    c.confidence = 55
+
+    def mod(key: str, delta: int, reason: str) -> None:
+        setattr(c, key, clamp(getattr(c, key) + delta))
+        if delta != 0:
+            log.append(f"condition.{key}：{getattr(c, key)}（{reason}）")
+
+    if "体能短板" in tags:
+        mod("energy", -8, "体能短板")
+        mod("muscle_fatigue", 6, "体能短板")
+    if "体能优势" in tags:
+        mod("energy", 8, "体能优势")
+    if "前运动员" in tags:
+        c.energy = 86
+        mod("injury_risk", 5, "前运动员旧伤负担")
+        mod("muscle_fatigue", 5, "前运动员训练负荷")
+    if "旧伤风险" in tags:
+        mod("injury_risk", 5, "旧伤风险")
+    if "语言压力" in tags:
+        mod("stress", 4, "语言压力影响初期表达")
+    if "家庭压力" in tags:
+        mod("stress", 6, "家庭压力")
+    if "心理敏感" in tags:
+        mod("stress", 4, "心理敏感")
+        mod("confidence", -3, "心理敏感")
+    if "选秀淘汰者" in tags:
+        mod("stress", 8, "失败记忆带来额外压力")
+    if "再出道" in tags:
+        mod("stress", 6, "再出道压力")
+    if "海外练习生" in tags:
+        mod("stress", 5, "海外适应压力")
+        mod("mood", -8, "海外孤独感")
+    if "顶流亲属" in tags:
+        mod("stress", 8, "比较压力较高")
+    if "关系户争议风险" in tags:
+        mod("stress", 4, "外部质疑带来心理压力")
+    if "公众审视压力" in tags:
+        mod("stress", 5, "公众审视压力")
+    if "文化适应压力" in tags:
+        mod("mood", -5, "文化适应压力")
+    if "职业倦怠风险" in tags:
+        mod("stress", 6, "职业倦怠风险")
+        mod("mood", -4, "职业倦怠风险")
+    if "素人发掘" in tags or "适应期新人" in tags:
+        mod("stress", 2, "初入体系的压力略高")
+
+
+def apply_trainee_initial(state: GameState, log: List[str]) -> None:
+    """练习生身份初始化为真正意义上的入社第一天。
+
+    没有公司内部资历；正式月评结果在第一次月评前保持 None（真正 Unknown）。
+    过去经历只决定角色自身水平，不决定公司已经怎么看她。
+    """
+    t = state.trainee
+    t.status = "active"
+    t.training_level = 1
+    t.latest_evaluation_score = None
+    t.latest_evaluation_date = None
+    log.append("trainee：入社第一天。latest_evaluation_score / date 为 None（尚无正式月评结果）。")
+
+
+def apply_player_initial(state: GameState, character: Dict[str, Any], tags: List[str], log: List[str]) -> None:
+    p = state.player
+    p.name = str(character.get("本名") or "").strip()
+    p.stage_name = str(character.get("艺名") or "").strip()
+    p.nationality = str(character.get("国籍") or "").strip()
+    p.birthday = None
+    p.starting_age = _parse_int(character.get("年龄"))
+    p.height_cm = _parse_int(character.get("身高"))
+    p.identity_source = str(character.get("身份") or "").strip()
+    p.mbti = str(character.get("MBTI") or "").strip()
+    p.mbti_profile = character.get("MBTI人格倾向") if isinstance(character.get("MBTI人格倾向"), dict) else {}
+    p.appearance = str(character.get("外貌风格") or "").strip()
+    p.personality = str(character.get("性格") or "").strip()
+    p.interests = str(character.get("爱好") or "").strip()
+    p.strengths = str(character.get("特长") or "").strip()
+    p.weak_points = str(character.get("弱项") or "").strip()
+    p.family_background = str(character.get("家庭状况") or "").strip()
+    p.background = str(character.get("练习生经历") or "").strip()
+    p.trainee_position = str(character.get("在团定位") or "").strip()
+    p.player_wish = str(character.get("你希望观众记住你的什么") or "").strip()
+    p.story_boundary = str(character.get("你不希望剧情触碰的内容") or "").strip()
+    p.extra_notes = str(character.get("其他补充") or "").strip()
+    p.avatar = str(character.get("avatar") or "").strip()
+    p.source_tags = list(tags)
+
+    if p.starting_age is not None:
+        log.append(f"player.starting_age = {p.starting_age}（创建流程只提供年龄，不伪造具体生日）")
+
+
+def allocate_initial_state(state: GameState, character: Dict[str, Any]) -> List[str]:
+    """根据角色创建数据构造新的权威 GameState。
+
+    只迁移：人物稳定事实、常规技能初始值、隐藏天赋、身体心理初始状态、
+    公司基本事实、练习生入社第一天的身份、Company Local Roster（NPC 人物圈）。
+
+    过去经历（身份 / 背景 / 标签）只在此处一次性结算初始数值，
+    不会形成后续隐藏倍率或持续修正。MBTI 仅作为人格描述事实保存，
+    不参与任何数值分配。所有角色都从入社第一天开始。
+
+    本函数是“新建存档”的正式入口：只在这里随机生成一次世界根随机种子
+    （MetaState.rng_seed），随后保存进存档；读档时直接恢复存档里的值，
+    绝不根据角色资料、日期或 save_id 重新计算。
     """
     log: List[str] = []
-    profile_tags = parse_profile_tags(character)
     timeline = str(character.get("时间线", "练习生阶段"))
-    identity = str(character.get("身份", ""))
+    if timeline != "练习生阶段":
+        log.append(f"时间线「{timeline}」暂按练习生阶段初始化；出道后内容将在后续版本重新设计。")
 
-    state.profile_tags = profile_tags
-    state.initial_allocation_log = log
+    tags = parse_profile_tags(character)
+    state.meta.rng_seed = secrets.randbits(64)
+    log.append(f"meta.rng_seed = {state.meta.rng_seed}（新建存档时随机生成一次，与角色资料无关）")
 
-    apply_company_size_profile(state, character, log)
+    apply_player_initial(state, character, tags, log)
+    apply_company_profile(state, character, log)
+    apply_skill_initial(state, character, tags, log)
+    apply_condition_initial(state, tags, log)
+    apply_trainee_initial(state, log)
 
-    state.talents = generate_talents(character)
+    # Menstrual Cycle bootstrap + 第一可玩日生理影响（作用于 time.current_date，非 created_date）。
+    initialize_menstrual_cycle(state)
+    apply_daily_menstrual_physiology(
+        state.menstrual_cycle, state.condition, state.time.current_date, state.meta.rng_seed
+    )
+    log.append("menstrual_cycle 已初始化并应用第一可玩日生理影响（每天仅应用一次）。")
 
-    # Low career defaults.
-    if "练习生" in timeline:
-        state.career = {
-            "舞蹈实力": 5,
-            "声乐实力": 5,
-            "RAP能力": 3,
-            "舞台感染力": 4,
-            "综艺感": 3,
-            "语言能力": 5,
-            "演技潜力": 2,
-            "创作能力": 2,
-            "制作人能力": 0,
-        }
-        log.append("练习生阶段：职业属性采用低值开局，多数为 2—5。")
-        career_cap = 15
-    elif "出道前" in timeline:
-        state.career = {
-            "舞蹈实力": 24,
-            "声乐实力": 24,
-            "RAP能力": 18,
-            "舞台感染力": 22,
-            "综艺感": 16,
-            "语言能力": 22,
-            "演技潜力": 10,
-            "创作能力": 8,
-            "制作人能力": 0,
-        }
-        log.append("出道前一天：职业属性进入预备出道水平。")
-        career_cap = 45
-    elif "回归" in timeline:
-        state.career = {
-            "舞蹈实力": 45,
-            "声乐实力": 42,
-            "RAP能力": 30,
-            "舞台感染力": 45,
-            "综艺感": 32,
-            "语言能力": 35,
-            "演技潜力": 18,
-            "创作能力": 15,
-            "制作人能力": 0,
-        }
-        log.append("回归瓶颈期：职业属性按已出道成员初始化。")
-        career_cap = 70
-    else:
-        state.career = {
-            "舞蹈实力": 55,
-            "声乐实力": 50,
-            "RAP能力": 35,
-            "舞台感染力": 55,
-            "综艺感": 40,
-            "语言能力": 45,
-            "演技潜力": 25,
-            "创作能力": 20,
-            "制作人能力": 5,
-        }
-        log.append("续约前一年：职业属性按成熟爱豆初始化。")
-        career_cap = 80
-
-    # MBTI-based small initial biases. MBTI is a game control variable, not a diagnosis.
-    mbti_code, mbti_e, mbti_p, mbti_j, mbti_l = mbti_letters(character)
-    state.character["MBTI"] = mbti_code
-    state.character.setdefault("MBTI说明", "MBTI只影响叙事倾向和小幅初始数值，不决定角色命运。")
-    log.append(f"MBTI {mbti_code}：作为叙事控制变量进入初始分配。")
-
-    if mbti_e == "E":
-        add(state.career, "综艺感", 3, log, "E型更主动表达和接梗", min(career_cap, 13 if "练习生" in timeline else career_cap))
-        state.team["团队默契度"] += 2
-        state.risks["公关危机风险"] += 1
-        log.append("E型：团队默契度更高，镜头暴露和公关风险轻微上升。")
-    else:
-        add(state.career, "创作能力", 2, log, "I型更容易沉淀内心素材", min(career_cap, 10 if "练习生" in timeline else career_cap))
-        state.mind["孤独感"] += 4
-        state.inner_life["日记倾向"] += 6
-        log.append("I型：内心戏和日记倾向更强，孤独感轻微上升。")
-
-    if mbti_p == "N":
-        add(state.career, "创作能力", 3, log, "N型更重视概念理解和表达", min(career_cap, 12 if "练习生" in timeline else career_cap))
-        add(state.career, "舞台感染力", 2, log, "N型更容易理解舞台叙事", min(career_cap, 13 if "练习生" in timeline else career_cap))
-        state.mind["精神压力"] += 2
-        log.append("N型：概念消化和舞台表达更强，但更容易想太多。")
-    else:
-        add(state.career, "舞蹈实力", 2, log, "S型更重视动作复现和细节执行", min(career_cap, 13 if "练习生" in timeline else career_cap))
-        state.company["公司信任度"] += 2
-        log.append("S型：训练执行稳定，公司信任轻微上升。")
-
-    if mbti_j == "F":
-        state.team["队内信任度"] += 3
-        state.mind["精神压力"] += 3
-        state.inner_life["秘密重量"] = min(100, int(state.inner_life.get("秘密重量", 10)) + 3)
-        log.append("F型：共情和团队黏性更高，秘密重量和内耗压力更容易累积。")
-    else:
-        state.mind["边界感"] = min(100, int(state.mind.get("边界感", 40)) + 4)
-        state.team["队内竞争度"] += 1
-        log.append("T型：边界感更高，冲突表达更直接。")
-
-    if mbti_l == "J":
-        state.company["公司信任度"] += 3
-        state.mind["精神压力"] += 2
-        state.schedule_profile["discipline_score"] = min(100, int(state.schedule_profile.get("discipline_score", 50)) + 4)
-        log.append("J型：计划性和纪律性更强，公司信任上升，责任压力略高。")
-    else:
-        add(state.career, "舞台感染力", 2, log, "P型更依赖现场反应和即兴", min(career_cap, 13 if "练习生" in timeline else career_cap))
-        state.risks["行程泄露风险"] += 1
-        state.schedule_profile["discipline_score"] = max(0, state.schedule_profile.get("discipline_score", 50) - 2)
-        log.append("P型：现场反应更灵活，纪律波动和行程风险轻微上升。")
-
-    # Tag-based low boosts.
-    if "舞蹈基础" in profile_tags:
-        add(state.career, "舞蹈实力", 5, log, "特长/经历包含舞蹈基础", min(career_cap, 15 if "练习生" in timeline else career_cap))
-        add(state.career, "舞台感染力", 2, log, "舞蹈基础带来舞台感", min(career_cap, 12 if "练习生" in timeline else career_cap))
-    if "声乐基础" in profile_tags:
-        add(state.career, "声乐实力", 5, log, "特长/经历包含声乐基础", min(career_cap, 15 if "练习生" in timeline else career_cap))
-    if "RAP基础" in profile_tags:
-        add(state.career, "RAP能力", 5, log, "特长/经历包含 RAP", min(career_cap, 15 if "练习生" in timeline else career_cap))
-    if "表演基础" in profile_tags:
-        add(state.career, "演技潜力", 5, log, "特长包含表演/演技", min(career_cap, 12 if "练习生" in timeline else career_cap))
-    if "创作兴趣" in profile_tags:
-        add(state.career, "创作能力", 4, log, "有创作兴趣或基础", min(career_cap, 12 if "练习生" in timeline else career_cap))
-
-    if "镜头优势" in profile_tags or "视觉优势" in profile_tags:
-        add(state.career, "舞台感染力", 3, log, "外貌/镜头风格匹配带来镜头表现优势", min(career_cap, 14 if "练习生" in timeline else career_cap))
-        state.market["话题度"] += 4
-        log.append("镜头/视觉优势：舞台感染力和初始话题度小幅上升。")
-
-    if "综艺潜力" in profile_tags:
-        add(state.career, "综艺感", 5, log, "性格与反应方式具备综艺潜力", min(career_cap, 15 if "练习生" in timeline else career_cap))
-
-    if "体能短板" in profile_tags:
-        state.body["体力"] = max(0, state.body.get("体力", 70) - 8)
-        state.body["肌肉疲劳"] = min(100, state.body.get("肌肉疲劳", 10) + 6)
-        log.append("体能短板：初始体力下降，肌肉疲劳偏高。")
-
-    if "语言压力" in profile_tags:
-        add(state.career, "语言能力", -2, log, "语言压力影响初期表达与采访稳定性", career_cap)
-        state.mind["精神压力"] += 4
-        log.append("语言压力：语言能力轻微受限，精神压力上升。")
-
-    if "家庭压力" in profile_tags:
-        state.mind["精神压力"] += 6
-        state.mind["孤独感"] += 3
-        log.append("家庭压力：精神压力与孤独感上升。")
-
-    if "心理敏感" in profile_tags:
-        state.mind["精神压力"] += 4
-        state.mind["自我认同"] = max(0, state.mind.get("自我认同", 50) - 3)
-        log.append("心理敏感：精神压力上升，自我认同略低。")
-
-    if "前运动员" in profile_tags:
-        add(state.career, "舞蹈实力", 3, log, "前运动员的身体控制迁移到舞蹈学习", min(career_cap, 14 if "练习生" in timeline else career_cap))
-        add(state.career, "舞台感染力", 2, log, "竞技经历带来舞台承压经验", min(career_cap, 12 if "练习生" in timeline else career_cap))
-        state.body["体力"] = 86
-        state.body["旧伤负担"] = 18
-        state.body["伤病风险"] = 20
-        log.append("前运动员：体力较高，但旧伤负担和伤病风险同步上升。")
-
-    if "选秀淘汰者" in profile_tags:
-        add(state.career, "舞台感染力", 5, log, "选秀经历带来镜头与舞台经验", 20 if "练习生" in timeline else career_cap)
-        add(state.career, "综艺感", 3, log, "选秀经历带来镜头表达经验", 18 if "练习生" in timeline else career_cap)
-        state.fans["个人粉丝数"] += 3000
-        state.fans["黑粉活跃度"] += 5
-        state.mind["精神压力"] += 8
-        log.append("选秀淘汰者：自带少量粉丝、黑粉与失败记忆压力。")
-
-    if "再出道" in profile_tags:
-        add(state.career, "舞台感染力", 6, log, "再出道经历带来真实舞台经验", 20 if "练习生" in timeline else career_cap)
-        state.mind["职业倦怠"] += 12
-        state.mind["精神压力"] += 6
-        log.append("再出道：舞台经验更强，但职业倦怠和压力更高。")
-
-    if "海外练习生" in profile_tags:
-        add(state.career, "语言能力", 4, log, "海外背景带来外语/跨文化优势", min(career_cap, 14 if "练习生" in timeline else career_cap))
-        state.mind["孤独感"] += 10
-        log.append("海外练习生：语言/海外潜力增加，同时孤独感上升。")
-
-    if "顶流亲属" in profile_tags:
-        state.market["话题度"] += 15
-        state.fans["黑粉活跃度"] += 8
-        state.mind["精神压力"] += 8
-        log.append("顶流亲属：初始话题高，但比较压力和黑粉更高。")
-
-    if "优渥家庭" in profile_tags:
-        add(state.career, "声乐实力", 2, log, "优渥家庭可能带来早期课程资源", min(career_cap, 12 if "练习生" in timeline else career_cap))
-        add(state.career, "语言能力", 2, log, "优渥教育资源带来语言基础", min(career_cap, 12 if "练习生" in timeline else career_cap))
-        state.fans["黑粉活跃度"] += 3
-        log.append("优渥家庭：课程资源略高，但关系户争议风险存在。")
-
-
-    if "素人发掘" in profile_tags or "适应期新人" in profile_tags:
-        state.company["公司信任度"] += 1
-        state.mind["精神压力"] += 2
-        log.append("素人/适应期新人：可塑性较高，但初入体系的压力略高。")
-
-    if "校园演出经验" in profile_tags:
-        add(state.career, "舞台感染力", 2, log, "校园演出带来基础舞台适应", min(career_cap, 12 if "练习生" in timeline else career_cap))
-
-    if "舞台经验" in profile_tags:
-        add(state.career, "舞台感染力", 4, log, "既有舞台经验提升舞台稳定性", min(career_cap, 16 if "练习生" in timeline else career_cap))
-
-    if "训练适应快" in profile_tags:
-        state.schedule_profile["discipline_score"] = min(100, int(state.schedule_profile.get("discipline_score", 50)) + 3)
-        add(state.career, "舞蹈实力", 1, log, "训练适应较快", min(career_cap, 12 if "练习生" in timeline else career_cap))
-        log.append("训练适应快：纪律分和基础训练吸收略高。")
-
-    if "既有流量" in profile_tags:
-        state.market["话题度"] += 10
-        state.fans["个人粉丝数"] += 1200
-        log.append("既有流量：初始话题度和个人粉丝数上升。")
-
-    if "黑粉争议风险" in profile_tags:
-        state.fans["黑粉活跃度"] += 7
-        state.risks["公关危机风险"] += 3
-        log.append("黑粉争议风险：黑粉活跃和公关风险上升。")
-
-    if "关系户争议风险" in profile_tags:
-        state.fans["黑粉活跃度"] += 5
-        state.mind["精神压力"] += 4
-        log.append("关系户争议风险：外部质疑带来黑粉和心理压力。")
-
-    if "公众审视压力" in profile_tags:
-        state.market["话题度"] += 6
-        state.mind["精神压力"] += 5
-        log.append("公众审视压力：话题度上升，同时精神压力上升。")
-
-    if "文化适应压力" in profile_tags:
-        state.mind["孤独感"] += 4
-        state.social_context["cultural_adaptation"] = max(0, int(state.social_context.get("cultural_adaptation", 55)) - 5)
-        log.append("文化适应压力：孤独感上升，文化适应度下降。")
-
-    if "纪律适应风险" in profile_tags:
-        state.schedule_profile["discipline_score"] = max(0, state.schedule_profile.get("discipline_score", 50) - 4)
-        state.company["公司信任度"] = max(0, state.company.get("公司信任度", 45) - 2)
-        log.append("纪律适应风险：纪律分和公司信任略降。")
-
-    if "体能优势" in profile_tags:
-        state.body["体力"] = min(100, int(state.body.get("体力", 70)) + 8)
-        log.append("体能优势：初始体力上升。")
-
-    if "旧伤风险" in profile_tags:
-        state.body["旧伤负担"] = min(100, int(state.body.get("旧伤负担", 0)) + 10)
-        state.body["伤病风险"] = min(100, int(state.body.get("伤病风险", 10)) + 5)
-        log.append("旧伤风险：旧伤负担和伤病风险上升。")
-
-    if "职业倦怠风险" in profile_tags:
-        state.mind["职业倦怠"] += 8
-        log.append("职业倦怠风险：开局职业倦怠更高。")
-
-
-    # Weakness penalties.
-    if "舞蹈短板" in profile_tags:
-        add(state.career, "舞蹈实力", -2, log, "弱项包含舞蹈", career_cap)
-    if "声乐短板" in profile_tags:
-        add(state.career, "声乐实力", -2, log, "弱项包含声乐", career_cap)
-    if "语言短板" in profile_tags:
-        add(state.career, "语言能力", -2, log, "弱项包含语言", career_cap)
-
-    # Always force producer ability low at start.
-    if "练习生" in timeline:
-        state.career["制作人能力"] = 0
-    elif "出道前" in timeline or "回归" in timeline:
-        state.career["制作人能力"] = min(state.career.get("制作人能力", 0), 5)
-
-    # Career caps for trainee.
-    if "练习生" in timeline:
-        for key in CAREER_KEYS:
-            cap = 15
-            if "选秀淘汰者" in profile_tags or "再出道" in profile_tags:
-                cap = 20 if key in {"舞台感染力", "舞蹈实力", "声乐实力", "综艺感"} else 15
-            if key == "制作人能力":
-                cap = 0
-            state.career[key] = clamp(state.career[key], 0, cap)
-
-        # Market/fandom mostly near zero unless special background.
-        state.market["品牌价值"] = min(state.market.get("品牌价值", 0), 5)
-        state.market["韩国本土影响力"] = min(state.market.get("韩国本土影响力", 0), 5)
-        state.fans["团体粉丝数"] = 0
-
-    log.append("制作人能力开局不因兴趣上升，必须通过创作能力与真实项目逐步解锁。")
+    # Company Profile 完成后生成 Company Local Roster（一次性 world bootstrap）。
+    initialize_npc_roster(state)
+    state.day = type(state.day)()
+    log.append(
+        f"NPC Local Roster 已初始化：{len(state.npcs)} 人"
+        f"（trainee/teacher/manager/staff 按 CompanySize={state.company.size.value} 确定，关系均为陌生人初始值）。"
+    )
+    return log

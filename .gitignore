@@ -1,3 +1,10 @@
 
 # Local audio assets
 assets/audio/
+
+# Runtime save databases
+storage/*.db
+storage/*.db-wal
+storage/*.db-shm
+storage/*.sqlite
+storage/*.sqlite3

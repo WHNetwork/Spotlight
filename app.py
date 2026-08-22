@@ -36,26 +36,19 @@ class KpopApp(
         self.custom_input = ft.TextField(label="自定义行动", multiline=True, min_lines=2, max_lines=4, expand=True)
         self.is_generating = False
         self.choice_buttons = []
-        self.weekly_plan_selected: list[str] = []
-        self.weekly_plan_controls = []
         self.submit_button = None
         self.thinking_banner = None
         self.pinned_alerts = ft.Column(spacing=8, visible=False)
         self.alerts_expanded = False
         self.expanded_sections = {
             "overview": True,
-            "schedule_profile": False,
+            "skills": True,
             "body": True,
             "mind": True,
-            "career": False,
-            "talents": False,
-            "period": False,
-            "social_env": False,
+            "trainee": True,
             "company": True,
-            "team": True,
-            "risks": True,
             "relationships": False,
-            "crisis_flags": True,
+            "day": True,
         }
 
     def run(self) -> None:

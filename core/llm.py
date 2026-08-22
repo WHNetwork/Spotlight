@@ -108,10 +108,69 @@ class XiaomiMiMoProvider(BaseProvider):
             raise LLMError(f"Xiaomi MiMo 返回格式异常：{data}") from exc
 
 
-def get_llm_provider(config: AppConfig) -> BaseProvider:
-    if config.provider == "mimo":
+class GLMProvider(BaseProvider):
+    """智谱 GLM（普通开放平台，OpenAI-compatible Chat Completions）。
+
+    只负责 transport：messages → GLM API → assistant content 字符串。
+    不接入 Coding Plan endpoint；不返回 reasoning_content；
+    不做任何文本后处理（除与现有 Provider 一致的 .strip 级别保持）。
+    """
+
+    def __init__(self, config: AppConfig) -> None:
+        self.config = config
+
+    def generate(self, messages: List[Dict[str, str]], model: str | None = None, json_mode: bool = True) -> str:
+        api_key = self.config.get_glm_api_key_fallback()
+        if not api_key:
+            raise LLMError("没有找到 GLM API Key。请设置环境变量 GLM_API_KEY，或按 DeepSeek/MiMo 同样的方式保存。")
+
+        actual_model = model or self.config.glm_model
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        payload = {
+            "model": actual_model,
+            "messages": messages,
+            "temperature": 0.85,
+            "stream": False,
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+        url = self.config.glm_base_url.rstrip("/") + "/chat/completions"
+        logger.info(f"Calling GLM: {url}, model={actual_model}")
+
+        try:
+            with httpx.Client(timeout=self.config.timeout_seconds) as client:
+                response = client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                data = response.json()
+        except httpx.HTTPStatusError as exc:
+            raise LLMError(f"GLM HTTP 错误：{exc.response.status_code} {exc.response.text}") from exc
+        except Exception as exc:
+            raise LLMError(f"GLM 调用失败：{exc}") from exc
+
+        try:
+            content = data["choices"][0]["message"]["content"]
+            preview = str(content).replace("\n", " ")[:260]
+            logger.info(f"GLM returned content: chars={len(str(content))}, preview={preview}")
+            return content
+        except Exception as exc:
+            raise LLMError(f"GLM 返回格式异常：{data}") from exc
+
+
+def get_llm_provider(config: AppConfig, provider_name: str | None = None) -> BaseProvider:
+    """窄接口：可显式指定 provider（"deepseek" / "mimo" / "glm"）。
+
+    provider_name 为 None 时保持既有行为（按 config.provider 选择），
+    不改变任何共享配置；model 名称仍由调用方从 config 读取。
+    未知 provider 明确抛 LLMError，不做 generic fallback。
+    """
+    chosen = provider_name or config.provider
+    if chosen == "glm":
+        return GLMProvider(config)
+    if chosen == "mimo":
         return XiaomiMiMoProvider(config)
-    return DeepSeekProvider(config)
+    if chosen == "deepseek":
+        return DeepSeekProvider(config)
+    raise LLMError(f"unsupported provider: {chosen}")
 
 def _stringify_text(value) -> str:
     if value is None:

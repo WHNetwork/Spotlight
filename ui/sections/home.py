@@ -328,11 +328,9 @@ class HomeMixin:
         for item in saves:
             save_id = item.get("id")
             raw_name = item.get("name") or item.get("save_name") or f"存档 {save_id}"
-            turn = item.get("turn") or 0
-            stage = item.get("current_stage") or "未知阶段"
             updated_at = item.get("updated_at") or ""
             created_at = item.get("created_at") or ""
-            label = f"{stage} · 第 {turn} 回合"
+            label = f"练习生 · 更新于 {updated_at or created_at or '未知时间'}"
             cards.append(
                 ft.Container(
                     width=360,
@@ -546,69 +544,40 @@ class HomeMixin:
                 self.show_schedule_page()
         self.page.on_resize = handler
 
-    def parse_age_value(self, value: Any) -> Optional[int]:
-        text = str(value or "").strip()
-        if not text:
-            return None
-        m = re.search(r"\d{1,2}", text)
-        if not m:
-            return None
-        try:
-            age = int(m.group(0))
-        except Exception:
-            return None
-        return age if 1 <= age <= 80 else None
-
     def sync_runtime_context(self, state: GameState | None = None) -> None:
+        """新架构下年龄等均为派生值，无需同步运行时上下文。保留方法签名供调用方使用。"""
+        return
+
+    def player_age(self, state: GameState | None = None) -> Optional[int]:
         s = state or self.state
         if s is None:
-            return
+            return None
+        try:
+            return s.player.age_on(s.time.current_date)
+        except Exception:
+            return None
 
-        ch = s.character if isinstance(s.character, dict) else {}
-        char_age = self.parse_age_value(ch.get("年龄"))
-        time_age = None
-        if isinstance(s.time, dict):
-            time_age = self.parse_age_value(s.time.get("age_years"))
-
-        age = time_age if time_age is not None else char_age
-        if age is not None:
-            try:
-                if age < 12:
-                    group = "儿童"
-                elif age < 16:
-                    group = "青少年早期"
-                elif age < 18:
-                    group = "青少年"
-                elif age < 21:
-                    group = "青年"
-                elif age < 26:
-                    group = "成年"
-                else:
-                    group = "成熟"
-                is_minor = age < 18
-                s.age_context = {
-                    "age": age,
-                    "age_group": group,
-                    "is_minor": is_minor,
-                    "guardian_required": is_minor,
-                    "romance_allowed": age >= 18,
-                }
-            except Exception:
-                pass
-            try:
-                if isinstance(s.time, dict):
-                    s.time["age_years"] = age
-                    if s.time.get("age_months") is None:
-                        s.time["age_months"] = age * 12
-            except Exception:
-                pass
+    def age_group_label(self, age: Optional[int]) -> str:
+        if age is None:
+            return "未知"
+        if age < 12:
+            return "儿童"
+        if age < 16:
+            return "青少年早期"
+        if age < 18:
+            return "青少年"
+        if age < 21:
+            return "青年"
+        if age < 26:
+            return "成年"
+        return "成熟"
 
     def completed_turn_count(self, state: GameState | None = None) -> int:
         s = state or self.state
         if s is None:
             return 0
         try:
-            return max(0, int(getattr(s, "turn", 0) or 0))
+            return max(0, int(s.meta.turn_index or 0))
         except Exception:
             return 0
 
@@ -619,14 +588,21 @@ class HomeMixin:
         done = self.completed_turn_count(state)
         return f"第 {done + 1} 回合 / 已完成 {done} 回合"
 
+    def stage_label(self, state: GameState | None = None) -> str:
+        s = state or self.state
+        if s is None:
+            return "练习生"
+        if not s.is_trainee_stage():
+            return "出道后"
+        return "练习生"
+
     def age_status_text(self, state: GameState | None = None) -> str:
         s = state or self.state
         if s is None:
             return "年龄未知"
-        self.sync_runtime_context(s)
-        age = s.age_context.get("age")
-        group = s.age_context.get("age_group") or "未知"
-        adult = "未成年" if s.age_context.get("is_minor") else "成年"
+        age = self.player_age(s)
+        group = self.age_group_label(age)
+        adult = "未成年" if age is not None and age < 18 else "成年"
         if age is None:
             return f"{group} / {adult}"
         return f"{age}岁 / {group} / {adult}"
@@ -634,36 +610,12 @@ class HomeMixin:
     def active_character_label(self) -> str:
         if self.state is None:
             return "未读取角色"
-        self.sync_runtime_context(self.state)
-        ch = self.state.character if isinstance(self.state.character, dict) else {}
-        name = ch.get("艺名") or ch.get("本名") or self.state.save_name or "当前角色"
-        stage = self.state.current_stage or "当前阶段"
-        return f"{name} · {stage} · {self.turn_status_text(self.state)}"
+        p = self.state.player
+        name = p.stage_name or p.name or self.state.save_name or "当前角色"
+        return f"{name} · {self.stage_label(self.state)} · {self.turn_status_text(self.state)}"
 
 
     def display_group_name(self, state: GameState | None = None) -> str:
-        s = state or self.state
-        if s is None:
-            return "练习生"
-        ch = s.character if isinstance(s.character, dict) else {}
-        debut = getattr(s, "debut", {}) or {}
-
-        if s.is_trainee_stage():
-            return "练习生"
-
-        candidates = []
-        for source in [ch, debut]:
-            if isinstance(source, dict):
-                for key in ["组合名", "团名", "出道组合", "组合", "group_name", "debut_group", "team_name"]:
-                    val = str(source.get(key) or "").strip()
-                    if val:
-                        candidates.append(val)
-
-        for flag in list(getattr(s, "flags", []) or []):
-            text = str(flag)
-            for prefix in ["组合名：", "组合：", "出道组合：", "团名："]:
-                if text.startswith(prefix):
-                    candidates.append(text.replace(prefix, "", 1).strip())
-
-        return candidates[0] if candidates else "出道组合未定"
+        """出道后团体状态已从新架构中移除，当前阶段一律为练习生。"""
+        return "练习生"
 

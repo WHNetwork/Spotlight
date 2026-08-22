@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
-from core.models import GameState, TurnResponse, RouteInfo, SystemEvent
+from core.event_triggers import EventHistorySnapshot
+from core.event_lifecycle import PostSlotEventOutcome
+from core.evaluation import MonthlyEvaluationResult
+from core.day_settlement import DaySettlementResult
+from core.models import GameState, TurnResponse, RouteInfo, SystemEvent, SlotKind, SlotStatus, SlotResolutionResult, EventResult, EventTier, DailyWritingArtifactType, DailyWritingArtifactRecord, EventSceneArtifactRecord
 
 DB_PATH = Path(__file__).resolve().parent.parent / "storage" / "saves.db"
 
@@ -18,6 +22,7 @@ class SaveStorage:
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
     def init_db(self) -> None:
@@ -58,6 +63,75 @@ class SaveStorage:
                     FOREIGN KEY(save_id) REFERENCES saves(id)
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS slot_resolution_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id INTEGER NOT NULL,
+                    game_date TEXT NOT NULL,
+                    slot_index INTEGER NOT NULL,
+                    result_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(save_id, game_date, slot_index),
+                    FOREIGN KEY(save_id) REFERENCES saves(id) ON DELETE CASCADE
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS event_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id INTEGER NOT NULL,
+                    event_instance_id TEXT NOT NULL,
+                    event_id TEXT NOT NULL,
+                    game_date TEXT NOT NULL,
+                    trigger_slot_index INTEGER NOT NULL,
+                    result_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(save_id, event_instance_id),
+                    FOREIGN KEY(save_id) REFERENCES saves(id) ON DELETE CASCADE
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS monthly_evaluation_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id INTEGER NOT NULL,
+                    evaluation_id TEXT NOT NULL,
+                    evaluation_date TEXT NOT NULL,
+                    year INTEGER NOT NULL,
+                    month INTEGER NOT NULL,
+                    result_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(save_id, year, month),
+                    UNIQUE(save_id, evaluation_id),
+                    FOREIGN KEY(save_id) REFERENCES saves(id) ON DELETE CASCADE
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS daily_writing_artifacts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id INTEGER NOT NULL,
+                    game_date TEXT NOT NULL,
+                    artifact_type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    provider_name TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(save_id, game_date, artifact_type),
+                    FOREIGN KEY(save_id) REFERENCES saves(id) ON DELETE CASCADE
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS event_scene_artifacts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    save_id INTEGER NOT NULL,
+                    event_instance_id TEXT NOT NULL,
+                    game_date TEXT NOT NULL,
+                    event_id TEXT NOT NULL,
+                    slot_index INTEGER NOT NULL,
+                    content TEXT NOT NULL,
+                    provider_name TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(save_id, event_instance_id),
+                    FOREIGN KEY(save_id) REFERENCES saves(id) ON DELETE CASCADE
+                )
+            """)
             for ddl in [
                 "ALTER TABLE turns ADD COLUMN route_json TEXT",
                 "ALTER TABLE turns ADD COLUMN system_events_json TEXT",
@@ -71,20 +145,21 @@ class SaveStorage:
 
     def create_save(self, state: GameState) -> int:
         now = datetime.now().isoformat(timespec="seconds")
-        state.created_at = now
-        state.updated_at = now
         with self.connect() as conn:
             cur = conn.execute(
                 "INSERT INTO saves (name, created_at, updated_at, state_json) VALUES (?, ?, ?, ?)",
-                (state.save_name, state.created_at, state.updated_at, state.model_dump_json()),
+                (state.save_name, now, now, "{}"),
             )
+            save_id = int(cur.lastrowid)
+            state.meta.save_id = save_id
+            conn.execute("UPDATE saves SET state_json=? WHERE id=?", (state.model_dump_json(), save_id))
             conn.commit()
-            return int(cur.lastrowid)
+            return save_id
 
     def update_save(self, save_id: int, state: GameState) -> None:
-        state.updated_at = datetime.now().isoformat(timespec="seconds")
+        now = datetime.now().isoformat(timespec="seconds")
         with self.connect() as conn:
-            conn.execute("UPDATE saves SET name=?, updated_at=?, state_json=? WHERE id=?", (state.save_name, state.updated_at, state.model_dump_json(), save_id))
+            conn.execute("UPDATE saves SET name=?, updated_at=?, state_json=? WHERE id=?", (state.save_name, now, state.model_dump_json(), save_id))
             conn.commit()
 
     def load_save(self, save_id: int) -> GameState:
@@ -103,6 +178,364 @@ class SaveStorage:
         with self.connect() as conn:
             rows = conn.execute("SELECT id, name, created_at, updated_at FROM saves ORDER BY updated_at DESC").fetchall()
             return [dict(row) for row in rows]
+
+    def save_slot_checkpoint(
+        self,
+        new_state: GameState,
+        result: SlotResolutionResult,
+        event_outcome: PostSlotEventOutcome,
+    ) -> None:
+        """原子保存 Slot checkpoint + Event Phase 结果（同一 SQLite transaction）。
+
+        要求调用方必须提供 PostSlotEventOutcome（不允许绕过 Event Phase）。
+
+        情况 A 无事件：UPDATE GameState + INSERT slot_resolution_history；
+        情况 B NON_INTERRUPTIVE：额外 INSERT event_history（EventResult）；
+        情况 C INTERRUPTIVE：UPDATE GameState（含 pending_event），不写 event_history。
+
+        - save_id 取自 new_state.meta.save_id，game_date 取自 new_state.time.current_date；
+        - 写入前做轻量一致性检查（Slot 已 COMPLETED 且与 result 一致；
+          outcome 与 new_state 的 pending_event / event_result 相互一致）；
+        - 任一步失败整体 ROLLBACK，不存在“Slot 已 COMPLETED 但 PendingEvent /
+          Non-interruptive EventResult 丢失”的部分结果；
+        - 重复写入由 UNIQUE 约束拒绝并抛错，不静默覆盖。
+        """
+        if not result.completed:
+            raise ValueError("SlotResolutionResult.completed 必须为 True 才能持久化。")
+        if not new_state.day.slots:
+            raise ValueError("DayState 尚未初始化，无法保存 Slot checkpoint。")
+        if not (0 <= result.slot_index < len(new_state.day.slots)):
+            raise ValueError(f"Slot index {result.slot_index} 超出当天范围。")
+        slot = new_state.day.slots[result.slot_index]
+        if slot.status != SlotStatus.COMPLETED:
+            raise ValueError(f"Slot {result.slot_index} 尚未 COMPLETED，checkpoint 与 result 不一致。")
+        if slot.kind != result.slot_kind:
+            raise ValueError(f"Slot {result.slot_index} 的 kind（{slot.kind.value}）与 result（{result.slot_kind.value}）不一致。")
+        if slot.kind == SlotKind.COMPANY and slot.company_course != result.company_course:
+            raise ValueError(f"Slot {result.slot_index} 的 company_course 与 result 不一致。")
+        if slot.kind == SlotKind.FREE and slot.free_action != result.free_action:
+            raise ValueError(f"Slot {result.slot_index} 的 free_action 与 result 不一致。")
+
+        if event_outcome.pending_event is not None:
+            if new_state.pending_event is None:
+                raise ValueError("event_outcome 声明 PendingEvent，但 new_state.pending_event 为 None。")
+            if new_state.pending_event.event_instance_id != event_outcome.pending_event.event_instance_id:
+                raise ValueError("event_outcome 与 new_state 的 PendingEvent instance_id 不一致。")
+            if new_state.pending_event.trigger_slot_index != result.slot_index:
+                raise ValueError("PendingEvent.trigger_slot_index 与 slot_result.slot_index 不一致。")
+        if event_outcome.event_result is not None:
+            if new_state.pending_event is not None:
+                raise ValueError("event_outcome 声明 EventResult，但 new_state 仍有 pending_event。")
+            if event_outcome.event_result.trigger_slot_index != result.slot_index:
+                raise ValueError("EventResult.trigger_slot_index 与 slot_result.slot_index 不一致。")
+            if event_outcome.event_result.game_date != new_state.time.current_date:
+                raise ValueError("EventResult.game_date 与 new_state.time.current_date 不一致。")
+        if event_outcome.pending_event is None and event_outcome.event_result is None:
+            if new_state.pending_event is not None:
+                raise ValueError("event_outcome 无事件，但 new_state 存在 pending_event。")
+
+        save_id = new_state.meta.save_id
+        if save_id <= 0:
+            raise ValueError("new_state.meta.save_id 未设置，无法保存 checkpoint。")
+        now = datetime.now().isoformat(timespec="seconds")
+        game_date = new_state.time.current_date.isoformat()
+        result_json = json.dumps(result.model_dump(mode="json"), ensure_ascii=False)
+
+        with self.connect() as conn:
+            conn.execute("BEGIN")
+            try:
+                cur = conn.execute(
+                    "UPDATE saves SET name=?, updated_at=?, state_json=? WHERE id=?",
+                    (new_state.save_name, now, new_state.model_dump_json(), save_id),
+                )
+                if cur.rowcount != 1:
+                    raise ValueError(f"存档不存在：{save_id}，无法保存 checkpoint。")
+                conn.execute(
+                    "INSERT INTO slot_resolution_history (save_id, game_date, slot_index, result_json, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (save_id, game_date, result.slot_index, result_json, now),
+                )
+                if event_outcome.event_result is not None:
+                    er = event_outcome.event_result
+                    conn.execute(
+                        "INSERT INTO event_history (save_id, event_instance_id, event_id, game_date, trigger_slot_index, result_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            save_id,
+                            er.event_instance_id,
+                            er.event_id,
+                            er.game_date.isoformat(),
+                            er.trigger_slot_index,
+                            json.dumps(er.model_dump(mode="json"), ensure_ascii=False),
+                            now,
+                        ),
+                    )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+    def load_slot_results(self, save_id: int, game_date: date) -> List[SlotResolutionResult]:
+        """读取指定存档、指定游戏日期的全部 Slot Result，按 slot_index 升序返回。
+
+        允许 0–8 条（玩家可能中途退出）；恢复为正式 SlotResolutionResult 模型。
+        """
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT result_json FROM slot_resolution_history WHERE save_id=? AND game_date=? ORDER BY slot_index ASC",
+                (save_id, game_date.isoformat()),
+            ).fetchall()
+        results: List[SlotResolutionResult] = []
+        for row in rows:
+            try:
+                results.append(SlotResolutionResult.model_validate(json.loads(row["result_json"])))
+            except Exception as exc:
+                raise ValueError(
+                    f"slot_resolution_history 记录损坏（save_id={save_id}, game_date={game_date.isoformat()}）：{exc}"
+                ) from exc
+        return results
+
+    def save_event_resolution_checkpoint(self, new_state: GameState, event_result: EventResult) -> None:
+        """玩家解决 PendingEvent 后原子保存：验证 PendingEvent → UPDATE GameState → INSERT EventResult。
+
+        同一 SQLite transaction：
+        ① 读取数据库当前存档的 GameState，确认其 pending_event 存在且
+           event_instance_id 与 event_result 一致（防止错配写入）；
+        ② UPDATE GameState（pending_event 已清除）；
+        ③ INSERT event_history；
+        COMMIT / 任一步失败 ROLLBACK。
+        """
+        save_id = new_state.meta.save_id
+        if save_id <= 0:
+            raise ValueError("new_state.meta.save_id 未设置，无法保存 Event resolution checkpoint。")
+        now = datetime.now().isoformat(timespec="seconds")
+        result_json = json.dumps(event_result.model_dump(mode="json"), ensure_ascii=False)
+
+        with self.connect() as conn:
+            conn.execute("BEGIN")
+            try:
+                row = conn.execute("SELECT state_json FROM saves WHERE id=?", (save_id,)).fetchone()
+                if row is None:
+                    raise ValueError(f"存档不存在：{save_id}。")
+                persisted = GameState.model_validate_json(row["state_json"])
+                if persisted.pending_event is None:
+                    raise ValueError("数据库当前存档没有 PendingEvent，不能写入 EventResult。")
+                if persisted.pending_event.event_instance_id != event_result.event_instance_id:
+                    raise ValueError(
+                        f"EventResult.event_instance_id 与数据库中的 PendingEvent 不一致：{event_result.event_instance_id}"
+                    )
+                cur = conn.execute(
+                    "UPDATE saves SET name=?, updated_at=?, state_json=? WHERE id=?",
+                    (new_state.save_name, now, new_state.model_dump_json(), save_id),
+                )
+                if cur.rowcount != 1:
+                    raise ValueError(f"存档不存在：{save_id}。")
+                conn.execute(
+                    "INSERT INTO event_history (save_id, event_instance_id, event_id, game_date, trigger_slot_index, result_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        save_id,
+                        event_result.event_instance_id,
+                        event_result.event_id,
+                        event_result.game_date.isoformat(),
+                        event_result.trigger_slot_index,
+                        result_json,
+                        now,
+                    ),
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+
+    def load_event_results(self, save_id: int, game_date: Optional[date] = None) -> List[EventResult]:
+        """读取已解决事件历史；可选按自然日过滤。
+
+        按 game_date ASC、trigger_slot_index ASC、id ASC 稳定排序；
+        返回正式 EventResult 模型，不返回裸 dict。
+        """
+        query = "SELECT result_json FROM event_history WHERE save_id=?"
+        params: List[Any] = [save_id]
+        if game_date is not None:
+            query += " AND game_date=?"
+            params.append(game_date.isoformat())
+        query += " ORDER BY game_date ASC, trigger_slot_index ASC, id ASC"
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        results: List[EventResult] = []
+        for row in rows:
+            try:
+                results.append(EventResult.model_validate(json.loads(row["result_json"])))
+            except Exception as exc:
+                raise ValueError(f"event_history 记录损坏（save_id={save_id}）：{exc}") from exc
+        return results
+
+    def build_event_history_snapshot(self, save_id: int, current_date: date) -> EventHistorySnapshot:
+        """从已解决 EventResult 历史构建 Step 8A 的 EventHistorySnapshot。
+
+        本方法位于 Persistence Layer；event_triggers.py 不直接访问 SQLite。
+        """
+        snapshot = EventHistorySnapshot()
+        for result in self.load_event_results(save_id):
+            snapshot.occurred_event_ids.add(result.event_id)
+            snapshot.event_counts[result.event_id] = snapshot.event_counts.get(result.event_id, 0) + 1
+            snapshot.last_event_dates[result.event_id] = result.game_date
+            if result.game_date == current_date:
+                if result.tier == EventTier.MAJOR:
+                    snapshot.major_count_today += 1
+                elif result.tier == EventTier.MINOR:
+                    snapshot.minor_count_today += 1
+        return snapshot
+
+    # ------------------------------------------------------------------
+    # Daily Writing Artifacts（player-visible 文本；与 GameState 无耦合）
+    # ------------------------------------------------------------------
+
+    def save_daily_writing_artifact(
+        self,
+        save_id: int,
+        game_date: date,
+        artifact_type: DailyWritingArtifactType,
+        content: str,
+        provider_name: str,
+    ) -> None:
+        """保存一条正式 daily writing artifact（默认禁止覆盖）。
+
+        同 (save_id, game_date, artifact_type) 已存在时由 UNIQUE 约束抛
+        sqlite3.IntegrityError；content 为空时明确失败，不写空 row。
+        """
+        if not content or not str(content).strip():
+            raise ValueError("不能保存空的 writing artifact。")
+        now = datetime.now().isoformat(timespec="seconds")
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO daily_writing_artifacts (save_id, game_date, artifact_type, content, provider_name, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (save_id, game_date.isoformat(), artifact_type.value, content, provider_name, now),
+            )
+            conn.commit()
+
+    def load_daily_writing_artifact(
+        self,
+        save_id: int,
+        game_date: date,
+        artifact_type: DailyWritingArtifactType,
+    ) -> Optional[DailyWritingArtifactRecord]:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT save_id, game_date, artifact_type, content, provider_name, created_at FROM daily_writing_artifacts WHERE save_id=? AND game_date=? AND artifact_type=?",
+                (save_id, game_date.isoformat(), artifact_type.value),
+            ).fetchone()
+        if row is None:
+            return None
+        return DailyWritingArtifactRecord(
+            save_id=int(row["save_id"]),
+            game_date=date.fromisoformat(row["game_date"]),
+            artifact_type=DailyWritingArtifactType(row["artifact_type"]),
+            content=row["content"],
+            provider_name=row["provider_name"],
+            created_at=row["created_at"],
+        )
+
+    def load_daily_writing_artifacts(
+        self,
+        save_id: int,
+        game_date: Optional[date] = None,
+    ) -> List[DailyWritingArtifactRecord]:
+        query = "SELECT save_id, game_date, artifact_type, content, provider_name, created_at FROM daily_writing_artifacts WHERE save_id=?"
+        params: List[Any] = [save_id]
+        if game_date is not None:
+            query += " AND game_date=?"
+            params.append(game_date.isoformat())
+        query += " ORDER BY game_date ASC, id ASC"
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [
+            DailyWritingArtifactRecord(
+                save_id=int(row["save_id"]),
+                game_date=date.fromisoformat(row["game_date"]),
+                artifact_type=DailyWritingArtifactType(row["artifact_type"]),
+                content=row["content"],
+                provider_name=row["provider_name"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    # ------------------------------------------------------------------
+    # Event Scene Artifacts（Interruptive Event Setup Scene；独立表，因一天可多事件）
+    # ------------------------------------------------------------------
+
+    def save_event_scene_artifact(
+        self,
+        save_id: int,
+        event_instance_id: str,
+        game_date: date,
+        event_id: str,
+        slot_index: int,
+        content: str,
+        provider_name: str,
+    ) -> None:
+        """保存一条 Event Setup Scene（默认禁止覆盖）。
+
+        同 (save_id, event_instance_id) 已存在时由 UNIQUE 约束抛
+        sqlite3.IntegrityError；content 为空时明确失败。
+        """
+        if not content or not str(content).strip():
+            raise ValueError("不能保存空的 event scene artifact。")
+        now = datetime.now().isoformat(timespec="seconds")
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO event_scene_artifacts (save_id, event_instance_id, game_date, event_id, slot_index, content, provider_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (save_id, event_instance_id, game_date.isoformat(), event_id, slot_index, content, provider_name, now),
+            )
+            conn.commit()
+
+    def load_event_scene_artifact(
+        self,
+        save_id: int,
+        event_instance_id: str,
+    ) -> Optional[EventSceneArtifactRecord]:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT save_id, event_instance_id, game_date, event_id, slot_index, content, provider_name, created_at FROM event_scene_artifacts WHERE save_id=? AND event_instance_id=?",
+                (save_id, event_instance_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return EventSceneArtifactRecord(
+            save_id=int(row["save_id"]),
+            event_instance_id=row["event_instance_id"],
+            game_date=date.fromisoformat(row["game_date"]),
+            event_id=row["event_id"],
+            slot_index=int(row["slot_index"]),
+            content=row["content"],
+            provider_name=row["provider_name"],
+            created_at=row["created_at"],
+        )
+
+    def load_event_scene_artifacts(
+        self,
+        save_id: int,
+        game_date: Optional[date] = None,
+    ) -> List[EventSceneArtifactRecord]:
+        query = "SELECT save_id, event_instance_id, game_date, event_id, slot_index, content, provider_name, created_at FROM event_scene_artifacts WHERE save_id=?"
+        params: List[Any] = [save_id]
+        if game_date is not None:
+            query += " AND game_date=?"
+            params.append(game_date.isoformat())
+        query += " ORDER BY game_date ASC, slot_index ASC, id ASC"
+        with self.connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [
+            EventSceneArtifactRecord(
+                save_id=int(row["save_id"]),
+                event_instance_id=row["event_instance_id"],
+                game_date=date.fromisoformat(row["game_date"]),
+                event_id=row["event_id"],
+                slot_index=int(row["slot_index"]),
+                content=row["content"],
+                provider_name=row["provider_name"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
 
     def add_turn(self, save_id: int, turn_no: int, player_action: str, response: TurnResponse, applied_diff: Dict[str, Any], route_info: RouteInfo, system_events: List[SystemEvent], validation_json: str) -> None:
         with self.connect() as conn:
@@ -174,3 +607,96 @@ class SaveStorage:
             return json.loads(row["entry_json"] or "{}")
         except Exception:
             return None
+
+    def load_monthly_evaluation_results(self, save_id: int) -> List[MonthlyEvaluationResult]:
+        """读取指定存档的全部正式月评结果，按 year ASC、month ASC、id ASC 稳定排序。
+
+        返回正式 MonthlyEvaluationResult 模型，不返回裸 dict。
+        """
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT result_json FROM monthly_evaluation_history WHERE save_id=? ORDER BY year ASC, month ASC, id ASC",
+                (save_id,),
+            ).fetchall()
+        results: List[MonthlyEvaluationResult] = []
+        for row in rows:
+            try:
+                results.append(MonthlyEvaluationResult.model_validate(json.loads(row["result_json"])))
+            except Exception as exc:
+                raise ValueError(f"monthly_evaluation_history 记录损坏（save_id={save_id}）：{exc}") from exc
+        return results
+
+    def save_day_settlement_checkpoint(self, new_state: GameState, result: DaySettlementResult) -> None:
+        """原子 Day Settlement checkpoint：从完成的旧日进入下一自然日。
+
+        同一 SQLite transaction：
+        ① 读取数据库当前 persisted GameState，验证：
+           current_date == result.settled_date、day.is_day_complete、pending_event is None；
+        ② 验证 new_state：current_date == result.next_date、pending_event is None；
+        ③ 若 result.monthly_evaluation 非空：做轻量一致性检查并 INSERT
+           monthly_evaluation_history（重复由 UNIQUE 拒绝并整体 rollback）；
+        ④ UPDATE saves.state_json 为 next-day GameState；
+        COMMIT / 任一步失败 ROLLBACK。
+
+        不重新计算任何评价分数；不自动处理 PendingEvent。
+        """
+        save_id = new_state.meta.save_id
+        if save_id <= 0:
+            raise ValueError("new_state.meta.save_id 未设置，无法保存 Day Settlement checkpoint。")
+        now = datetime.now().isoformat(timespec="seconds")
+
+        with self.connect() as conn:
+            conn.execute("BEGIN")
+            try:
+                row = conn.execute("SELECT state_json FROM saves WHERE id=?", (save_id,)).fetchone()
+                if row is None:
+                    raise ValueError(f"存档不存在：{save_id}。")
+                persisted = GameState.model_validate_json(row["state_json"])
+                if persisted.time.current_date != result.settled_date:
+                    raise ValueError(
+                        f"数据库当前存档日期（{persisted.time.current_date}）与 settled_date"
+                        f"（{result.settled_date}）不一致（可能已结算过这一天）。"
+                    )
+                if not persisted.day.is_day_complete:
+                    raise ValueError("数据库当前存档当天尚未完成，不能 Day Settlement。")
+                if persisted.pending_event is not None:
+                    raise ValueError("数据库当前存档仍有 PendingEvent，不能 Day Settlement。")
+
+                if new_state.time.current_date != result.next_date:
+                    raise ValueError("new_state.current_date 必须等于 result.next_date。")
+                if new_state.pending_event is not None:
+                    raise ValueError("new_state 不应携带 PendingEvent（Day Settlement 后必须无待处理事件）。")
+
+                if result.monthly_evaluation is not None:
+                    evaluation = result.monthly_evaluation
+                    if evaluation.evaluation_date != result.settled_date:
+                        raise ValueError("monthly_evaluation.evaluation_date 必须等于 settled_date。")
+                    if evaluation.year != result.settled_date.year or evaluation.month != result.settled_date.month:
+                        raise ValueError("monthly_evaluation 的 year/month 必须与 settled_date 一致。")
+                    if new_state.trainee.latest_evaluation_date != evaluation.evaluation_date:
+                        raise ValueError("new_state.trainee.latest_evaluation_date 与 evaluation_date 不一致。")
+                    if new_state.trainee.latest_evaluation_score != evaluation.overall_score:
+                        raise ValueError("new_state.trainee.latest_evaluation_score 与 overall_score 不一致。")
+                    conn.execute(
+                        "INSERT INTO monthly_evaluation_history (save_id, evaluation_id, evaluation_date, year, month, result_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            save_id,
+                            evaluation.evaluation_id,
+                            evaluation.evaluation_date.isoformat(),
+                            evaluation.year,
+                            evaluation.month,
+                            json.dumps(evaluation.model_dump(mode="json"), ensure_ascii=False),
+                            now,
+                        ),
+                    )
+
+                cur = conn.execute(
+                    "UPDATE saves SET name=?, updated_at=?, state_json=? WHERE id=?",
+                    (new_state.save_name, now, new_state.model_dump_json(), save_id),
+                )
+                if cur.rowcount != 1:
+                    raise ValueError(f"存档不存在：{save_id}。")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise

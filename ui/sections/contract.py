@@ -108,13 +108,13 @@ class ContractMixin:
         return ft.Column(controls, spacing=6)
 
     def resume_header_card(self, s: GameState):
-        ch = s.character if isinstance(s.character, dict) else {}
-        art_name = str(ch.get("艺名") or ch.get("本名") or s.save_name or "练习生")
-        real_name = str(ch.get("本名") or "").strip()
-        nationality = str(ch.get("国籍") or s.social_context.get("nationality") or "未填写")
-        age = ch.get("年龄") or s.age_context.get("age") or "未知"
-        identity = str(ch.get("身份") or "练习生")
-        mbti = str(ch.get("MBTI") or "未设定")
+        p = s.player
+        art_name = str(p.stage_name or p.name or s.save_name or "练习生")
+        real_name = str(p.name or "").strip()
+        nationality = str(p.nationality or "未填写")
+        age = self.age_status_text(s)
+        identity = str(p.identity_source or "练习生")
+        mbti = str(p.mbti or "未设定")
         group_name = self.display_group_name(s)
 
         return ft.Container(
@@ -159,7 +159,7 @@ class ContractMixin:
                         font_family=FONT_CN,
                     ),
                     ft.Text(
-                        f"{s.current_stage} · 第 {s.turn} 回合 · {s.current_mainline} · {s.current_schedule}",
+                        f"{self.stage_label(s)} · {self.turn_status_text(s)} · {s.time.current_date} · 练习生第 {s.time.trainee_day} 天",
                         size=self.ui_size(12),
                         color=C["dai"],
                         font_family=FONT_CN,
@@ -184,9 +184,6 @@ class ContractMixin:
             ], spacing=7, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         )
 
-    def profile_value_rows(self, mapping: Dict[str, Any], icon_name: str = "app_logo", color: str = "#9A8FC4"):
-        return [(k, v, icon_name, color) for k, v in mapping.items()]
-
     def show_contract_page(self, tab: str = "profile") -> None:
         if not self.load_latest_for_static_page():
             self.static_empty_page("档案与合约中心", "个人档案、公司合约与边界规则", "contract")
@@ -194,26 +191,15 @@ class ContractMixin:
         self.subpage_resize_refresh("contract")
 
         s = self.state
-        ch = s.character if isinstance(s.character, dict) else {}
-        company = s.company if isinstance(s.company, dict) else {}
-        risks = s.risks if isinstance(s.risks, dict) else {}
-        safety = s.safety if isinstance(s.safety, dict) else {}
-        debut = s.debut if isinstance(s.debut, dict) else {}
+        p = s.player
+        company = s.company
+        c = s.condition
         group_name = self.display_group_name(s)
         layout = self.contract_layout_sizes()
 
-        if s.is_trainee_stage():
-            contract_name = "练习生协议"
-            contract_phase = "训练观察期"
-            activity_limit = "外出、公开社交、外部合作均需公司确认"
-        elif "出道准备" in str(s.current_stage) or debut.get("status") == "confirmed":
-            contract_name = "出道预备协议"
-            contract_phase = "出道准备期"
-            activity_limit = "组合企划、公开露出、社交媒体与个人活动由公司统一管理"
-        else:
-            contract_name = "专属艺人合约"
-            contract_phase = "活动履行期"
-            activity_limit = "公开行程、个人活动、品牌露出与恋爱相关议题均受公司管理"
+        contract_name = "练习生协议"
+        contract_phase = "训练观察期"
+        activity_limit = "外出、公开社交、外部合作均需公司确认"
 
         top_info = ft.Container(
             width=layout["side"],
@@ -227,14 +213,13 @@ class ContractMixin:
                     ft.Container(icon_image("contract", 24, 0.9), width=38, height=38, border_radius=19, bgcolor=ft.Colors.with_opacity(0.32, C["lotus"]), alignment=ft.Alignment.CENTER),
                     ft.Column([
                         ft.Text("档案导航", size=self.ui_size(17), weight=ft.FontWeight.W_700, color=C["ink"], font_family=FONT_CN),
-                        ft.Text(ch.get("艺名") or ch.get("本名") or s.save_name, size=self.ui_size(11), color=C["sub"], font_family=FONT_CN),
+                        ft.Text(p.stage_name or p.name or s.save_name, size=self.ui_size(11), color=C["sub"], font_family=FONT_CN),
                     ], spacing=1, expand=True),
                 ], spacing=10),
                 ft.Divider(height=14, color=ft.Colors.with_opacity(0.30, C["line"])),
                 self.text_line("组合名", group_name, "stage", C["apricot"]),
                 self.text_line("当前合约", contract_name, "contract", C["jade"]),
                 self.text_line("合约阶段", contract_phase, "schedule", C["lavender"]),
-                self.text_line("出道动向", self.player_debut_status(debut), "stage", C["apricot"]),
                 ft.Divider(height=14, color=ft.Colors.with_opacity(0.30, C["line"])),
                 self.contract_tab_button("个人档案", "new_character", tab == "profile", lambda e: self.show_contract_page("profile")),
                 self.contract_tab_button("合同信息", "contract", tab == "contract", lambda e: self.show_contract_page("contract")),
@@ -246,15 +231,13 @@ class ContractMixin:
             "公司视角下的当前状态",
             "safety",
             ft.Column([
-                self.metric_bar("合约稳定度", company.get("合约稳定度", 0), "contract", C["jade"]),
-                self.metric_bar("公司信任度", company.get("公司信任度", 0), "staff_boundary", C["celadon"]),
-                self.text_line("公司规模", company.get("公司规模", "中型公司"), "contract", C["lavender"]),
-                self.metric_bar("资源池", company.get("资源池", 50), "market", C["jade"]),
-                self.metric_bar("资源倾斜度", company.get("资源倾斜度", 0), "market", C["jade"]),
-                self.metric_bar("个人议价权", company.get("个人议价权", 0), "contract", C["apricot"]),
-                self.metric_bar("公关危机风险", risks.get("公关危机风险", 0), "crisis_pr", C["rouge"], danger_high=True),
-                self.metric_bar("私生风险", risks.get("私生风险", 0), "safety", C["rouge"], danger_high=True),
-                self.metric_bar("边界风险", safety.get("boundary_violation_risk", 0), "staff_boundary", C["rouge"], danger_high=True),
+                self.text_line("公司规模", company.size, "contract", C["lavender"]),
+                self.metric_bar("资源水平", company.resource_level, "market", C["jade"]),
+                self.metric_bar("训练强度", company.training_intensity, "training", C["apricot"], danger_high=True),
+                self.metric_bar("公司评价", s.trainee.company_evaluation, "contract", C["jade"]),
+                self.metric_bar("纪律", s.trainee.discipline, "training", C["apricot"], danger_high=True),
+                self.metric_bar("伤病风险", c.injury_risk, "crisis_pr", C["rouge"], danger_high=True),
+                self.metric_bar("精神压力", c.stress, "crisis_pr", C["rouge"], danger_high=True),
             ], spacing=7),
             width=layout["summary"],
         )
@@ -263,19 +246,12 @@ class ContractMixin:
             clause_text = "\n".join([
                 f"• 活动限制：{activity_limit}",
                 "• 住宿管理：宿舍、门禁、夜间外出和访客管理由公司统一记录。",
-                "• 训练考核：月末考核、阶段评估、组合适配度会影响资源与出道窗口。",
+                "• 训练考核：日常培养权重、训练强度与公司评价会影响资源投入。",
                 "• 社交媒体：公开发声、照片发布、直播内容需遵守公司边界。",
                 "• 私人关系：恋爱、暧昧、工作人员越界、同龄关系曝光都会进入风险系统。",
                 "• 学业与监护：未成年、海外成员会额外涉及监护人、学校、签证与家庭沟通。",
-                "• 伤病上报：伤病、经期不适、睡眠失衡与心理压力会影响训练安排和合同风险。",
+                "• 伤病上报：伤病、睡眠失衡与心理压力会影响训练安排和合同风险。",
             ])
-            history_items = []
-            for h in list(debut.get("history", []) or [])[-6:]:
-                if isinstance(h, dict):
-                    history_items.append(f"第 {h.get('turn')} 回合：准备度 {h.get('readiness')} / 概率 {h.get('probability')}% / 结果 {h.get('result')}")
-            if not history_items:
-                history_items = ["暂无正式出道评估记录。"]
-
             contract_body = ft.Column([
                 ft.Row([
                     self.static_page_card(
@@ -286,70 +262,84 @@ class ContractMixin:
                             ("组合名", group_name, "stage", C["apricot"]),
                             ("合同类型", contract_name, "contract", C["jade"]),
                             ("签约阶段", contract_phase, "schedule", C["lavender"]),
-                            ("所属公司", ch.get("公司") or "未填写", "market", C["jade"]),
-                            ("公司规模", company.get("公司规模", "中型公司"), "contract", C["lavender"]),
-                            ("公司路线", company.get("公司路线", "均衡培养"), "market", C["jade"]),
-                            ("公司满意", company.get("公司满意度"), "contract", C["jade"]),
-                            ("公司信任", company.get("公司信任度"), "staff_boundary", C["celadon"]),
-                            ("主推指数", company.get("主推指数"), "stage", C["lavender"]),
-                            ("续约倾向", company.get("续约倾向"), "contract", C["jade"]),
+                            ("所属公司", company.name or "未填写", "market", C["jade"]),
+                            ("公司规模", company.size, "contract", C["lavender"]),
+                            ("培养路线", company.training_style, "market", C["jade"]),
+                            ("训练强度", company.training_intensity, "training", C["jade"]),
+                            ("资源水平", company.resource_level, "market", C["celadon"]),
+                            ("公司评价", s.trainee.company_evaluation, "stage", C["lavender"]),
                         ]),
                         width=layout["w2"],
                     ),
                     self.static_page_card(
-                        "风险与边界",
-                        "合同可见的风险窗口",
+                        "身体与心理",
+                        "当前状态摘要",
                         "safety",
                         ft.Column([
-                            self.metric_bar("外出许可", safety.get("outing_permission"), "schedule", C["jade"]),
-                            self.metric_bar("宿舍安全", safety.get("dorm_security"), "safety", C["jade"]),
-                            self.metric_bar("恋爱风险", risks.get("恋爱风险"), "romance", C["rouge"], danger_high=True),
-                            self.metric_bar("行程泄露风险", risks.get("行程泄露风险"), "camera", C["rouge"], danger_high=True),
-                            self.metric_bar("性骚扰风险", risks.get("性骚扰风险"), "staff_boundary", C["rouge"], danger_high=True),
-                            self.metric_bar("霸凌排挤风险", risks.get("霸凌排挤风险"), "friendship", C["rouge"], danger_high=True),
+                            self.metric_bar("体力", c.energy, "schedule", C["jade"]),
+                            self.metric_bar("睡眠状态", c.sleep_condition, "safety", C["jade"]),
+                            self.metric_bar("肌肉疲劳", c.muscle_fatigue, "training", C["rouge"], danger_high=True),
+                            self.metric_bar("伤病风险", c.injury_risk, "health", C["rouge"], danger_high=True),
+                            self.metric_bar("心情", c.mood, "romance", C["lotus"]),
+                            self.metric_bar("精神压力", c.stress, "staff_boundary", C["rouge"], danger_high=True),
                         ], spacing=7),
                         width=layout["w2"],
                     ),
                 ], spacing=18, alignment=ft.MainAxisAlignment.CENTER, vertical_alignment=ft.CrossAxisAlignment.START),
-                self.static_page_card("核心条款", "第一版以可读条款展示，后续可扩展为逐条签署记录", "staff_boundary", self.static_text_block(clause_text, 8, 16)),
-                self.static_page_card("合同历史", "出道准备与长期记录", "diary", self.static_text_block("\n".join(history_items), 5, 10)),
+                self.static_page_card("核心条款", "练习生阶段合同条款", "staff_boundary", self.static_text_block(clause_text, 8, 16)),
             ], spacing=18, scroll=ft.ScrollMode.AUTO, expand=True)
             main_panel = ft.Container(expand=True, content=contract_body)
         else:
+            height_text = f"{p.height_cm}cm" if p.height_cm is not None else "未填写"
             basic_rows = [
-                ("本名", ch.get("本名") or "未填写", "new_character", C["lotus"]),
-                ("艺名", ch.get("艺名") or "未填写", "stage", C["lavender"]),
+                ("本名", p.name or "未填写", "new_character", C["lotus"]),
+                ("艺名", p.stage_name or "未填写", "stage", C["lavender"]),
                 ("组合名", group_name, "stage", C["apricot"]),
-                ("身份", ch.get("身份") or "练习生", "contract", C["jade"]),
-                ("MBTI", ch.get("MBTI") or "未设定", "diary", C["lavender"]),
+                ("身份", p.identity_source or "练习生", "contract", C["jade"]),
+                ("MBTI", p.mbti or "未设定", "diary", C["lavender"]),
                 ("年龄", self.age_status_text(s), "new_character", C["lotus"]),
-                ("国籍", ch.get("国籍") or s.social_context.get("nationality") or "未填写", "market", C["jade"]),
-                ("监护限制", "需要监护沟通" if s.age_context.get("guardian_required") else "无特殊监护限制", "safety", C["apricot"]),
-                ("当前阶段", s.current_stage, "schedule", C["lavender"]),
-                ("当前主线", s.current_mainline, "diary", C["jade"]),
-                ("当前行程", s.current_schedule, "schedule", C["apricot"]),
-                ("当前日期", s.time.get("current_date"), "schedule", C["jade"]),
+                ("国籍", p.nationality or "未填写", "market", C["jade"]),
+                ("身高", height_text, "new_character", C["jade"]),
+                ("当前阶段", self.stage_label(s), "schedule", C["lavender"]),
+                ("练习生第", f"{s.time.trainee_day} 天", "diary", C["jade"]),
+                ("当前日期", s.time.current_date.isoformat(), "schedule", C["apricot"]),
+                ("入社日期", s.trainee.joined_date.isoformat(), "diary", C["jade"]),
             ]
-            career_rows = self.profile_value_rows(s.career or {}, "stage", C["lavender"])
-            body_mind_rows = self.profile_value_rows(s.body or {}, "health", C["jade"]) + self.profile_value_rows(s.mind or {}, "diary", C["lotus"])
+            career_rows = [
+                ("舞蹈", s.skills.dance.value, "dance", C["jade"]),
+                ("声乐", s.skills.vocal.value, "vocal", C["lotus"]),
+                ("RAP", s.skills.rap.value, "rap", C["apricot"]),
+                ("舞台", s.skills.stage.value, "stage", C["lavender"]),
+                ("镜头", s.skills.camera.value, "camera", C["celadon"]),
+                ("语言", s.skills.language.value, "market", C["jade"]),
+                ("演技（未解锁）", "隐藏", "stage", C["apricot"]),
+                ("创作（未解锁）", "隐藏", "music", C["apricot"]),
+            ]
+            body_mind_rows = [
+                ("体力", c.energy, "health", C["jade"]),
+                ("睡眠状态", c.sleep_condition, "schedule", C["celadon"]),
+                ("嗓音状态", c.voice_condition, "vocal", C["jade"]),
+                ("肌肉疲劳", c.muscle_fatigue, "training", C["apricot"]),
+                ("伤病风险", c.injury_risk, "safety", C["rouge"]),
+                ("心情", c.mood, "diary", C["lotus"]),
+                ("自信", c.confidence, "app_logo", C["lavender"]),
+                ("精神压力", c.stress, "crisis_pr", C["rouge"]),
+            ]
             social_rows = [
-                ("语言压力", s.social_context.get("language_barrier"), "market", C["apricot"]),
-                ("文化适应", s.social_context.get("cultural_adaptation"), "hierarchy", C["jade"]),
-                ("签证压力", s.social_context.get("visa_pressure"), "contract", C["rouge"]),
-                ("学校类型", s.school.get("school_type"), "school", C["lavender"]),
-                ("出勤压力", s.school.get("attendance_pressure"), "school", C["rouge"]),
-                ("家庭支持", s.family.get("emotional_support"), "family", C["jade"]),
-                ("家庭冲突", s.family.get("conflict_level"), "family", C["rouge"]),
-                ("控制欲", s.family.get("control_level"), "family", C["apricot"]),
+                ("身高", f"{p.height_cm}cm" if p.height_cm is not None else "未填写", "new_character", C["jade"]),
+                ("特长", p.strengths or "未填写", "stage", C["jade"]),
+                ("弱项", p.weak_points or "未填写", "health", C["apricot"]),
+                ("家庭背景", p.family_background or "未填写", "family", C["jade"]),
+                ("练习生经历", p.background or "未填写", "contract", C["jade"]),
+                ("训练等级", f"Lv.{s.trainee.training_level}", "stage", C["lavender"]),
+                ("出勤", s.trainee.attendance, "schedule", C["jade"]),
+                ("老师印象", s.trainee.teacher_impression, "stage", C["lotus"]),
             ]
             relation_rows = [
-                ("团队默契", self.vget(s.team, "团队默契度", "团队默契"), "friendship", C["jade"]),
-                ("队内信任", s.team.get("队内信任度"), "friendship", C["celadon"]),
-                ("真实关系温度", s.team.get("真实关系温度"), "romance", C["lotus"]),
-                ("个人粉丝", self.vget(s.fans, "个人粉丝", "个人粉丝数"), "fans", C["jade"]),
-                ("团体粉丝", self.vget(s.fans, "团体粉丝", "团体粉丝数"), "fans", C["celadon"]),
-                ("粉圈撕裂", s.fans.get("粉圈撕裂度"), "crisis_pr", C["rouge"]),
+                ("关系记录", f"{len(s.relationships)} 人", "friendship", C["jade"]),
             ]
+            for name, rel in list(s.relationships.items())[:6]:
+                relation_rows.append((str(name), f"熟悉 {rel.familiarity} / 信任 {rel.trust} / 亲近 {rel.closeness} / 张力 {rel.tension}", "friendship", C["jade"]))
 
             main_panel = ft.Container(
                 expand=True,

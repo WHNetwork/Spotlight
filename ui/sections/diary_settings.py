@@ -5,13 +5,13 @@ from ui.shared import *
 
 class DiaryScheduleSettingsMixin:
     def turn_date_for_diary(self, turn_no: int, row_created_at: str | None = None) -> str:
-        if self.state is not None and isinstance(self.state.time, dict):
-            current = str(self.state.time.get("current_date") or "")
-            current_turn = int(getattr(self.state, "turn", 0) or 0)
+        if self.state is not None:
+            current = str(self.state.time.current_date)
+            current_turn = int(self.state.meta.turn_index or 0)
             try:
                 base = datetime.strptime(current, "%Y-%m-%d")
                 delta_turns = max(0, current_turn - int(turn_no))
-                return (base - timedelta(days=delta_turns * 7)).strftime("%Y-%m-%d")
+                return (base - timedelta(days=delta_turns)).strftime("%Y-%m-%d")
             except Exception:
                 pass
         if row_created_at:
@@ -51,19 +51,16 @@ class DiaryScheduleSettingsMixin:
         turn_no = int(row["turn_no"])
         narrative = self.display_narrative_from_response_data(response, "")
         action = str(row["player_action"] or "").strip()
-        ch = self.state.character if self.state is not None and isinstance(self.state.character, dict) else {}
+        p = self.state.player if self.state is not None else None
         state_payload = self.state.as_prompt_dict() if self.state is not None else {}
 
         hidden_context = {
-            "period": state_payload.get("period", {}),
-            "inner_life": state_payload.get("inner_life", {}),
-            "relationships": state_payload.get("relationships", {}),
-            "family": state_payload.get("family", {}),
-            "school": state_payload.get("school", {}),
-            "safety": state_payload.get("safety", {}),
+            "skills": state_payload.get("skills", {}),
+            "condition": state_payload.get("condition", {}),
+            "trainee": state_payload.get("trainee", {}),
             "company": state_payload.get("company", {}),
-            "team": state_payload.get("team", {}),
-            "risks": state_payload.get("risks", {}),
+            "relationships": state_payload.get("relationships", {}),
+            "time": state_payload.get("time", {}),
             "events": events,
             "applied_diff": applied,
         }
@@ -87,12 +84,12 @@ class DiaryScheduleSettingsMixin:
                 "role": "user",
                 "content": json.dumps({
                     "character": {
-                        "name": ch.get("艺名") or ch.get("本名") or (self.state.save_name if self.state else "当前角色"),
-                        "age": ch.get("年龄"),
-                        "nationality": ch.get("国籍"),
-                        "identity": ch.get("身份"),
-                        "mbti": ch.get("MBTI"),
-                        "mbti_profile": ch.get("MBTI人格倾向"),
+                        "name": p.stage_name or p.name or (self.state.save_name if self.state else "当前角色"),
+                        "age": self.player_age(self.state),
+                        "nationality": p.nationality if p is not None else "",
+                        "identity": p.identity_source if p is not None else "",
+                        "mbti": p.mbti if p is not None else "",
+                        "mbti_profile": p.mbti_profile if p is not None else {},
                     },
                     "turn": turn_no,
                     "date": self.turn_date_for_diary(turn_no, row["created_at"] if "created_at" in row.keys() else None),
@@ -298,8 +295,8 @@ class DiaryScheduleSettingsMixin:
 
         if not entries:
             entries = [{
-                "turn": self.state.turn,
-                "date": self.state.time.get("current_date", "") if isinstance(self.state.time, dict) else "",
+                "turn": self.state.meta.turn_index,
+                "date": self.state.time.current_date.isoformat(),
                 "title": "练习室的第一页",
                 "content": "这个角色的日记还没有正式开始。推进一回合后，这里会根据当前角色的经历生成可浏览的私人记录。",
                 "mood": "等待",
@@ -335,9 +332,9 @@ class DiaryScheduleSettingsMixin:
                 ft.Text("日记跟随当前角色存档保存，不同角色之间互不共享。", size=self.ui_size(13), color=C["ink"], font_family=FONT_CN),
                 ft.Text("打开本页时，会把缺失回合交给叙事模型改写成私人日记并缓存到当前存档。已经写好的日记会直接读取，不会重复生成。", size=self.ui_size(12), color=C["sub"], font_family=FONT_CN),
                 ft.Divider(height=self.ui_size(16), color=ft.Colors.with_opacity(0.32, C["line"])),
-                self.text_line("当前角色", self.state.character.get("艺名") or self.state.save_name, "new_character", C["lotus"]),
+                self.text_line("当前角色", self.state.player.stage_name or self.state.save_name, "new_character", C["lotus"]),
                 self.text_line("记录数量", len(entries), "schedule", C["jade"]),
-                self.text_line("最近回合", self.state.turn, "stage", C["apricot"]),
+                self.text_line("最近回合", self.state.meta.turn_index, "stage", C["apricot"]),
             ], spacing=self.ui_size(8)),
             width=left_w,
         )
@@ -379,33 +376,24 @@ class DiaryScheduleSettingsMixin:
         self.subpage_resize_refresh("schedule")
 
         s = self.state
-        time_data = s.time if isinstance(s.time, dict) else {}
-        profile = s.schedule_profile if isinstance(s.schedule_profile, dict) else {}
-        body = s.body if isinstance(s.body, dict) else {}
-        current_profile = profile.get("current_profile", {}) if isinstance(profile.get("current_profile", {}), dict) else {}
+        t = s.time
+        c = s.condition
+        day = s.day
 
         future_items = [
-            ("今天", s.current_schedule or "根据状态完成当日安排", "schedule"),
-            ("本回合", f"预计跨度：{time_data.get('turn_duration_days', 7)} 天", "schedule"),
-            ("月末考核", f"倒计时：{time_data.get('next_evaluation_days', time_data.get('assessment_countdown_days', '未知'))} 天", "stage"),
+            ("今天", f"{t.current_date} · 练习生第 {t.trainee_day} 天", "schedule"),
+            ("本回合", "单日制：1 天 = 1 回合（下一步实现 8 个 3 小时时间格）", "schedule"),
+            ("月末", f"还有 {t.days_until_month_end} 天" if not t.is_month_end else "就是今天", "stage"),
             ("恢复安排", "体力低于 35 或伤病风险高于 60 时，建议优先恢复", "health"),
             ("训练维护", "长期不练的技能会先掉手感，之后才可能退化属性", "training"),
         ]
 
-        if s.is_trainee_stage():
-            plan_text = "\n".join([
-                "• 练习生阶段以训练、考核、基础纪律、宿舍与学校压力为主。",
-                "• 舞蹈、声乐、RAP、舞台表现需要周期性维护。",
-                "• 月末考核前，强行堆训练会增加疲劳和伤病风险。",
-                "• 公司观察期内，私自外出、迟到、缺课会影响信任与出道候选。",
-            ])
-        else:
-            plan_text = "\n".join([
-                "• 爱豆阶段以打歌、拍摄、综艺、巡演、回归准备为主。",
-                "• 训练从能力提升转为状态维护，长期不练仍会影响舞台质量。",
-                "• 高工作负荷会挤压睡眠、恢复和关系经营。",
-                "• 回归窗口、合约窗口、危机窗口会改变行程优先级。",
-            ])
+        plan_text = "\n".join([
+            "• 练习生阶段以训练、考核、基础纪律、宿舍与学校压力为主。",
+            "• 舞蹈、声乐、RAP、舞台表现需要周期性维护。",
+            "• 月末前，强行堆训练会增加疲劳和伤病风险。",
+            "• 公司观察期内，私自外出、迟到、缺课会影响评价与纪律分。",
+        ])
 
         mode = self.subpage_layout_mode()
         side_w = None if mode == "narrow" else self.ui_size(360)
@@ -413,7 +401,7 @@ class DiaryScheduleSettingsMixin:
             self.static_page_card(
                 "未来节点", "当前存档的近期安排",
                 "schedule",
-                ft.Column([self.text_line(day, text, icon_name, C["lotus"]) for day, text, icon_name in future_items], spacing=self.ui_size(9)),
+                ft.Column([self.text_line(day_label, text, icon_name, C["lotus"]) for day_label, text, icon_name in future_items], spacing=self.ui_size(9)),
                 width=side_w,
             ),
             ft.Container(
@@ -424,21 +412,21 @@ class DiaryScheduleSettingsMixin:
                         "时间压力", "当前节奏的风险提示",
                         "schedule",
                         ft.Column([
-                            self.metric_bar("行程负荷", profile.get("workload_pressure", 0), "schedule", C["apricot"], danger_high=True),
-                            self.metric_bar("体力", body.get("体力", 0), "health", C["jade"]),
-                            self.metric_bar("睡眠质量", body.get("睡眠质量", 0), "period", C["lotus"]),
-                            self.metric_bar("肌肉疲劳", body.get("肌肉疲劳", 0), "dance", C["rouge"], danger_high=True),
-                            self.metric_bar("伤病风险", body.get("伤病风险", 0), "crisis_pr", C["rouge"], danger_high=True),
+                            self.metric_bar("今日安排", len(day.schedule), "schedule", C["jade"]),
+                            self.metric_bar("已完成格子", len(day.completed_slots), "training", C["jade"]),
+                            self.metric_bar("体力", c.energy, "health", C["jade"]),
+                            self.metric_bar("睡眠状态", c.sleep_condition, "period", C["lotus"]),
+                            self.metric_bar("肌肉疲劳", c.muscle_fatigue, "dance", C["rouge"], danger_high=True),
+                            self.metric_bar("伤病风险", c.injury_risk, "crisis_pr", C["rouge"], danger_high=True),
                         ], spacing=self.ui_size(6)),
                     ),
                 ], spacing=self.ui_size(18), scroll=ft.ScrollMode.AUTO, expand=True),
             ),
             self.static_page_card(
-                "训练构成", "当前阶段的时间分布",
+                "日程结构", "当前阶段的时间分布",
                 "stage",
                 ft.Column(
-                    [self.metric_bar(k, v, "training", C["jade"]) for k, v in current_profile.items()] or
-                    [ft.Text("暂无行程构成。", size=self.ui_size(12), color=C["sub"], font_family=FONT_CN)],
+                    [ft.Text("时间格系统将在下一步实现：1 天 = 8 个 3 小时格。", size=self.ui_size(12), color=C["sub"], font_family=FONT_CN)],
                     spacing=self.ui_size(6),
                 ),
                 width=side_w,
