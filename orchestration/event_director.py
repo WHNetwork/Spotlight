@@ -636,7 +636,9 @@ def run_event_director(
         return EventDirectorCallResult(status=EventDirectorStatus.NOT_NEEDED, attempt_count=0)
 
     config = AppConfig()
-    model = config.mimo_pro_model
+    policy = config.model_policy
+    tier = policy if policy in {"flash", "pro", "custom"} else "flash"
+    model = config.model_for_provider("mimo", tier)
     active_provider = provider if provider is not None else get_llm_provider(config, provider_name=_DIRECTOR_MODEL_POLICY)
     allowed = [c.event_id for c in context.candidates]
     system_prompt, user_prompt = build_event_director_prompt(context)

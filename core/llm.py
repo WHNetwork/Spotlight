@@ -140,6 +140,7 @@ class GLMProvider(BaseProvider):
             "messages": messages,
             "temperature": 0.85,
             "stream": False,
+            "thinking": {"type": "disabled"},
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}

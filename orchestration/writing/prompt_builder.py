@@ -114,14 +114,17 @@ def build_writing_messages(
 
 
 def _model_for_provider(config: AppConfig, provider_name: str) -> str:
-    """从 AppConfig 真实字段选择模型（不硬编码 model name）。"""
-    if provider_name == "mimo":
-        return config.mimo_pro_model
-    if provider_name == "deepseek":
-        return config.pro_model
-    if provider_name == "glm":
-        return config.glm_model
-    raise WritingPolicyError(f"unsupported provider for narrative writing: {provider_name}")
+    """从 AppConfig 选择模型，遵循用户 model_policy。
+
+    默认 policy=flash → Flash；用户切到 Pro/Custom 则跟随；legacy 'auto'
+    视为 flash。不再硬编码 Pro。不 hardcode model name。
+    """
+    policy = config.model_policy
+    tier = policy if policy in {"flash", "pro", "custom"} else "flash"
+    try:
+        return config.model_for_provider(provider_name, tier)
+    except ValueError as exc:
+        raise WritingPolicyError(f"unsupported provider for narrative writing: {provider_name}") from exc
 
 
 def generate_player_text(

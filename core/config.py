@@ -38,9 +38,14 @@ class AppConfig:
         # GLM (Zhipu Open Platform) settings. OpenAI-compatible endpoint:
         # https://open.bigmodel.cn/api/paas/v4/chat/completions
         self.glm_base_url = "https://open.bigmodel.cn/api/paas/v4/"
-        self.glm_model = "glm-5.2"
+        self.glm_model = "glm-5.2"  # legacy field, kept for backward compat
+        self.glm_flash_model = "glm-4.7-flash"
+        self.glm_pro_model = "glm-5.2"
+        self.glm_custom_model = "glm-5.2"
 
-        self.model_policy = "auto"
+        # New default is "flash". "auto" is still recognized on load for
+        # legacy config files, but the UI never exposes it.
+        self.model_policy = "flash"
         self.timeout_seconds = 120
         self.load()
 
@@ -62,6 +67,12 @@ class AppConfig:
 
                 self.glm_base_url = data.get("glm_base_url", self.glm_base_url)
                 self.glm_model = data.get("glm_model", self.glm_model)
+                # GLM 3-tier migration: a legacy config that only had glm_model
+                # seeds glm_pro_model / glm_custom_model from it.
+                legacy_glm = data.get("glm_model")
+                self.glm_flash_model = data.get("glm_flash_model", "glm-4.7-flash")
+                self.glm_pro_model = data.get("glm_pro_model") or legacy_glm or "glm-5.2"
+                self.glm_custom_model = data.get("glm_custom_model") or legacy_glm or "glm-5.2"
 
                 self.model_policy = data.get("model_policy", self.model_policy)
                 self.timeout_seconds = int(data.get("timeout_seconds", self.timeout_seconds))
@@ -83,6 +94,9 @@ class AppConfig:
         mimo_custom_model: str | None = None,
         glm_base_url: str | None = None,
         glm_model: str | None = None,
+        glm_flash_model: str | None = None,
+        glm_pro_model: str | None = None,
+        glm_custom_model: str | None = None,
     ) -> None:
         if provider is not None:
             provider = provider.strip().lower()
@@ -113,6 +127,12 @@ class AppConfig:
             self.glm_base_url = glm_base_url.strip() or self.glm_base_url
         if glm_model is not None:
             self.glm_model = glm_model.strip() or self.glm_model
+        if glm_flash_model is not None:
+            self.glm_flash_model = glm_flash_model.strip() or self.glm_flash_model
+        if glm_pro_model is not None:
+            self.glm_pro_model = glm_pro_model.strip() or self.glm_pro_model
+        if glm_custom_model is not None:
+            self.glm_custom_model = glm_custom_model.strip() or self.glm_custom_model
 
         self.timeout_seconds = int(timeout_seconds)
         CONFIG_PATH.write_text(json.dumps({
@@ -127,6 +147,9 @@ class AppConfig:
             "mimo_custom_model": self.mimo_custom_model,
             "glm_base_url": self.glm_base_url,
             "glm_model": self.glm_model,
+            "glm_flash_model": self.glm_flash_model,
+            "glm_pro_model": self.glm_pro_model,
+            "glm_custom_model": self.glm_custom_model,
             "model_policy": self.model_policy,
             "timeout_seconds": self.timeout_seconds,
         }, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -145,25 +168,34 @@ class AppConfig:
             return self.glm_base_url
         return self.base_url
 
-    def model_for_tier(self, tier: str) -> str:
-        if self.provider == "mimo":
-            flash_model = self.mimo_flash_model
-            pro_model = self.mimo_pro_model
-            custom_model = self.mimo_custom_model
-        elif self.provider == "glm":
-            return self.glm_model
-        else:
-            flash_model = self.flash_model
-            pro_model = self.pro_model
-            custom_model = self.custom_model
+    def model_for_provider(self, provider_name: str, tier: str = "flash") -> str:
+        """Return the model for a given provider + tier (flash/pro/custom).
 
-        if self.model_policy == "flash":
-            return flash_model
-        if self.model_policy == "pro":
-            return pro_model
-        if self.model_policy == "custom":
-            return custom_model
-        return pro_model if tier == "pro" else flash_model
+        ``tier`` of 'auto' is treated as the caller-supplied tier for legacy
+        compatibility. Does not mutate any shared provider config.
+        """
+        name = (provider_name or self.provider).strip().lower()
+        if name == "deepseek":
+            flash, pro, custom = self.flash_model, self.pro_model, self.custom_model
+        elif name == "mimo":
+            flash, pro, custom = self.mimo_flash_model, self.mimo_pro_model, self.mimo_custom_model
+        elif name == "glm":
+            flash, pro, custom = self.glm_flash_model, self.glm_pro_model, self.glm_custom_model
+        else:
+            raise ValueError(f"unsupported provider: {name}")
+        t = (tier or "flash").strip().lower()
+        if t == "pro":
+            return pro
+        if t == "custom":
+            return custom
+        return flash
+
+    def model_for_tier(self, tier: str) -> str:
+        policy = self.model_policy
+        if policy in {"flash", "pro", "custom"}:
+            return self.model_for_provider(self.provider, policy)
+        # legacy 'auto': the caller-supplied tier decides
+        return self.model_for_provider(self.provider, tier or "flash")
 
     # DeepSeek API key: keep legacy names for compatibility.
     def get_api_key(self) -> str:
